@@ -2,6 +2,8 @@ from enum import Enum
 from typing import List, Union, TypeVar
 from magrittetorch.model.geometry.geometry import Geometry
 from magrittetorch.model.parameters import Parameters
+from magrittetorch.utils.storagetypes import DataCollection
+from magrittetorch.utils.io import IO
 import torch
 
 
@@ -36,13 +38,22 @@ class Image:
 
 class Model:
     def __init__(self, name : str) -> None:
+        self.dataCollection = DataCollection()
+        self.name : str = name
+        self.io = IO(name)
         self.parameters: Parameters = Parameters()
         self.parameters.name.set(name)
-        self.geometry: Geometry = Geometry(self.parameters)
+        self.geometry: Geometry = Geometry(self.parameters, self.dataCollection)
         self.chemistry: Union[Chemistry, None] = None
         self.thermodynamics: Union[Thermodynamics, None] = None
         self.lines: Union[Lines, None] = None
         self.radiation: Union[Radiation, None] = None
         self.images: List[Image] = []
+
+    def write(self) -> None:
+        self.io.write(self.dataCollection)
+
+    def read(self) -> None:
+        self.io.read(self.dataCollection)    
 
     

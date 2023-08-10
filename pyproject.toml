@@ -40,3 +40,7 @@ Homepage = "https://github.com/Magritte-code/Magritte-torch"
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
 pythonpath = [".", "src"]
+
+[tool.setuptools.packages.find]
+include = ["magrittetorch*"]
+exclude = ["docs*", "tests*", "models*"]

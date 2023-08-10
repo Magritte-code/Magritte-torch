@@ -13,6 +13,9 @@ class Parameter(Generic[T]):
     
     def __str__(self) -> str:
         return "Parameter " + self.name + " with current value: " + str(self.value)
+    
+    def __repr__(self) -> str:
+        return self.name + ": " + str(self.value)
 
     
     def set_force_overwrite(self, value : T) -> None:
@@ -46,6 +49,7 @@ class Parameters:
     nfreqs = Parameter[int]("nfreqs")
     nrays = Parameter[int]("nrays")
     name = Parameter[str]("name")
+    nboundary = Parameter[int]("nboundary")
     #TODO: complete list of parameters
 
     

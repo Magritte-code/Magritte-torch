@@ -1,0 +1,8 @@
+*.json
+*.ini
+SOURCES.txt
+requires.txt
+build/
+magrittetorch.egg-info/*
+*__pycache__*
+models/
