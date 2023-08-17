@@ -2,6 +2,7 @@ from enum import Enum
 from typing import List, Union, Dict, Tuple
 from magrittetorch.model.geometry.points import Points
 from magrittetorch.model.geometry.boundary import Boundary
+from magrittetorch.model.geometry.rays import Rays
 from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.storagetypes import DataCollection, Types
 from magrittetorch.algorithms.torch_algorithms import multi_arange
@@ -19,16 +20,13 @@ class GeometryType(Enum):
     General3D : int = 0
     SpericallySymmetric1D : int = 1
 
-class Rays:
-    pass  # Define the Rays class her
-
 class Geometry:
     def __init__(self, params : Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
         self.points: Points = Points(params, self.dataCollection)
         self.boundary: Boundary = Boundary(params, self.dataCollection)
-        self.rays: Union[Rays, None] = None
+        self.rays: Rays = Rays(params, self.dataCollection)
         self.geometrytype : GeometryType = GeometryType.General3D
     
     # def map_data_to_device(self) -> None:
@@ -127,7 +125,7 @@ class Geometry:
 
         #Get distances and compare with distance of current point; note: some computation might be wasted
         xdistance, ydistance = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[neighbors_to_check], lengthened_distance_travelled)
-        currdistance, _ = self.distance_in_direction(lengthened_origin_coords, raydirection, positions_device[lengthened_curr_ids], lengthened_distance_travelled)
+        currdistance, _ = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[lengthened_curr_ids], lengthened_distance_travelled)
 
         wrongdirection = xdistance <= currdistance
         #add penalty to points in wrong direction, making sure that it is never the correct point;

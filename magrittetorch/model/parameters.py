@@ -1,14 +1,19 @@
-from typing import Optional, Generic, TypeVar
+from typing import Optional, Generic, TypeVar, Iterator
 
 T = TypeVar('T')
+# TODO: maybe change compile time of type checking to runtime checking; hmm, think about performance implications
+#TODO: write docs
 class Parameter(Generic[T]):
     """Parameter class
 
     Args:
         Generic (_type_): Type of the value of the parameter
     """
-    def __init__(self, name : str, value : Optional[T] = None) -> None:
+    def __init__(self, name : str, legacy_name : Optional[str] = None) -> None:
         self.name : str = name
+        self.legacy_name : str = self.name
+        if legacy_name is not None:
+            self.legacy_name = legacy_name
         self.value : Optional[T] = None
     
     def __str__(self) -> str:
@@ -45,19 +50,37 @@ class Parameter(Generic[T]):
             return self.value
 
 class Parameters:
+    """List of Parameter's
+
+    Yields:
+        Parameter: parameters for a model
+    """
     npoints = Parameter[int]("npoints")
     nfreqs = Parameter[int]("nfreqs")
     nrays = Parameter[int]("nrays")
-    name = Parameter[str]("name")
+    # name = Parameter[str]("name")
     nboundary = Parameter[int]("nboundary")
+    nspecs = Parameter[int]("nspecs")
+    nlspecs = Parameter[int]("nlspecs")
     #TODO: complete list of parameters
+
+    def __iter__(self) -> Iterator[Parameter[T]]:
+        """Iterator for the parameters of a model
+
+        Yields:
+            Iterator[Parameter[T]]: parameters for a model
+        """
+        for attr in dir(self):
+            if not attr.startswith("__"):#no builtin attributes, nor __iter__ itself
+                yield self.__getattribute__(attr)
 
     
 
 
 
     #TODO: first create IO class to handle IO ops
-    def read(self, file_name : str) -> None:
-        pass
-    def write(self, file_name : str) -> None:
-        pass
+    #TODO: do we actually need to read and write these; only for compatibility reasons with C++ magritte
+    # def read(self, file_name : str) -> None:
+    #     pass
+    # def write(self, file_name : str) -> None:
+    #     pass

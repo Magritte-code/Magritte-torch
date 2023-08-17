@@ -3,6 +3,8 @@ from enum import Enum
 from magrittetorch.utils.storagetypes import StorageTensor, Types, DataCollection, InferredTensor
 from model.parameters import Parameters
 import torch
+from astropy import units
+
 
 storagedir : str = "geometry/boundary/"
 
@@ -20,11 +22,11 @@ class Boundary:
     def __init__(self, params : Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.boundary2point : StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.nboundary], storagedir+"boundary2point"); self.dataCollection.add_data(self.boundary2point) # maps boundary index \in[0, nboundary-1] to point index \in[0, npoints-1]
-        self.boundary_condition : StorageTensor = StorageTensor(Types.Enum, [self.parameters.nboundary], storagedir+"boundary_condition"); self.dataCollection.add_data(self.boundary_condition) #contains the boundary conditions for each boundary point
-        self.boundary_temperature: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nboundary], storagedir+"boundary_temperature"); self.dataCollection.add_data(self.boundary_temperature) # contains the CMB temperature corresponding to incoming photons
-        self.point2boundary : InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.npoints], self._infer_point2boundary); self.dataCollection.add_inferred_dataset(self.point2boundary) # maps point index \in[0, npoints-1] to boundary index \in[0, nboundary-1]
-        self.is_boundary_point: InferredTensor = InferredTensor(Types.Bool, [self.parameters.npoints], self._infer_is_boundary_points); self.dataCollection.add_inferred_dataset(self.is_boundary_point) # contains whether or not the given point is a boundary point
+        self.boundary2point : StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary2point"); self.dataCollection.add_data(self.boundary2point, "boundary2point") # maps boundary index \in[0, nboundary-1] to point index \in[0, npoints-1]
+        self.boundary_condition : StorageTensor = StorageTensor(Types.Enum, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary_condition"); self.dataCollection.add_data(self.boundary_condition, "boundary_condition") #contains the boundary conditions for each boundary point
+        self.boundary_temperature: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nboundary], units.K, storagedir+"boundary_temperature"); self.dataCollection.add_data(self.boundary_temperature, "boundary_temperature") # contains the CMB temperature corresponding to incoming photons
+        self.point2boundary : InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_point2boundary); self.dataCollection.add_inferred_dataset(self.point2boundary, "point2boundary") # maps point index \in[0, npoints-1] to boundary index \in[0, nboundary-1]
+        self.is_boundary_point: InferredTensor = InferredTensor(Types.Bool, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_is_boundary_points); self.dataCollection.add_inferred_dataset(self.is_boundary_point, "is_boundary_point") # contains whether or not the given point is a boundary point
 
     def _infer_point2boundary(self) -> torch.Tensor:
         data : torch.Tensor = self.parameters.npoints.get()*torch.ones(self.parameters.npoints.get()).type(Types.IndexInfo)

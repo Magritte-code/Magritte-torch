@@ -36,7 +36,7 @@ class MemoryManager:
     def generate_splits(self, max_Nindices : int, max_memory: int, expected_memory_usage : int) -> List[torch.Tensor]:
         Nsplits : int = (expected_memory_usage + max_memory - 1) // max_memory
         max_indices_per_split : int = (max_Nindices + Nsplits - 1) // Nsplits
-        return torch.split(torch.arange(max_Nindices), max_indices_per_split)
+        return torch.split(torch.arange(max_Nindices), [max_indices_per_split])
     
     @staticmethod
     def compute_data_size_torch_tensor(expected_data_size : int, dtype : torch.dtype) -> int:
