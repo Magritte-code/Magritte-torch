@@ -7,19 +7,18 @@ import astropy
 
 
 T = TypeVar('T')
-# TODO: update docs!!
 
 class StorageTensor():
     """Dataset which stores a torch.Tensor
     """
-    def __init__(self, dtype : torch.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, relative_storage_location : str, legacy_converter : Optional[Tuple[str, Optional[Callable[[], None]]]] = None, tensor : Optional[torch.Tensor] = None):
+    def __init__(self, dtype : torch.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, relative_storage_location : str, legacy_converter : Optional[Tuple[str, Optional[Callable[[Any], torch.Tensor]]]] = None, tensor : Optional[torch.Tensor] = None):
         """Initializes the storageTensor with the given datatype, required dimensions and storage location (for saving/loading). Optionally already sets the data to the given torch.Tensor.
 
         Args:
             dtype (torch.dtype): The data type of the stored data
             dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension_
             relative_storage_location (str): The location at which this torch.Tensor is stored (relative to the model name)
-            legacy_converter (Tuple[str, Optional[Callable[[], None]]): The location at which this torch.Tensor is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
+            legacy_converter (Tuple[str, Optional[Callable[[Any], torch.Tensor]]): The location at which this torch.Tensor is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             tensor (Optional[torch.Tensor]): tensor to store and check dimensions of; if None, then dimensions are not checked. The tensor has then to be filled in later on
         """
         if tensor is not None:
@@ -28,7 +27,7 @@ class StorageTensor():
 
         #some storage locations/data might be different for C++ magritte and python magritte, thus we need some conversion for legacy functionality
         self.legacy_relative_storage_location : str = self.relative_storage_location
-        self.legacy_conversion_function : Optional[Callable[[], None]] = None #function to apply after reading the data
+        self.legacy_conversion_function : Optional[Callable[[Any], torch.Tensor]] = None #function to apply after reading the data
         if legacy_converter is not None:
             self.legacy_relative_storage_location = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
@@ -142,13 +141,14 @@ class StorageTensor():
 class InferredTensor():
     """Inferred dataset which stores a torch.Tensor. Has an automatic .infer() method to automatically set data after all storageTensors are set.
     """
-    def __init__(self, dtype : torch.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, infer_function : Callable[[], torch.Tensor], relative_storage_location : Optional[str] = None, legacy_converter : Optional[Tuple[str, Optional[Callable[[], None]]]] = None):
+    def __init__(self, dtype : torch.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, infer_function : Callable[[], torch.Tensor], relative_storage_location : Optional[str] = None, legacy_converter : Optional[Tuple[str, Optional[Callable[[Any], torch.Tensor]]]] = None):
         """Initializes the inferredTensor with the given datatype, required dimensions and function used for inferring its data.
 
         Args:
             dtype (torch.dtype): The data type of the stored data
             dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension_
             infer_function (Callable[[] torch.Tensor]): function which returns the inferred data, if called after the data has been fully set
+            legacy_converter (Optional[Tuple[str, Optional[Callable[[Any], torch.Tensor]]]]): The location at which this torch.Tensor is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             relative_storage_location (Optional[str]): Location where to store/read the tensor; if None, then the data will not be stored
         """
         self.dtype = dtype
@@ -157,7 +157,7 @@ class InferredTensor():
         self.relative_storage_location : Optional[str] = relative_storage_location
         #some storage locations/data might be different for C++ magritte and python magritte, thus we need some conversion for legacy functionality
         self.legacy_relative_storage_location = self.relative_storage_location
-        self.legacy_conversion_function : Optional[Callable[[], None]] = None #function to apply after reading the data
+        self.legacy_conversion_function : Optional[Callable[[Any], torch.Tensor]] = None #function to apply after reading the data
         if legacy_converter is not None:
             self.legacy_relative_storage_location = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
@@ -279,13 +279,14 @@ class StorageNdarray():
     """Dataset which stores a numpy.ndarray.
     Only use this for data which cannot be stored in pytorch tensors (e.g. strings).
     """
-    def __init__(self, type : np.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, relative_storage_location : str, legacy_converter : Optional[Tuple[str, Optional[Callable[[], None]]]] = None, array : Optional[np.ndarray[Any, Any]] = None):
+    def __init__(self, type : np.dtype, dims : List[Union[Parameter[int], int, None]], unit : units.Unit, relative_storage_location : str, legacy_converter : Optional[Tuple[str, Optional[Callable[[Any], np.ndarray]]]] = None, array : Optional[np.ndarray[Any, Any]] = None):
         """Initializes the storageNdarray with the given datatype, required dimensions and storage location (for saving/loading). Optionally already sets the data to the given numpy.ndarray.
 
         Args:
             dtype (np.dtype): The data type of the stored data
             dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension_
             relative_storage_location (str): The location at which this torch.Tensor is stored (relative to the model name)
+            legacy_converter (Optional[Tuple[str, Callable[[Any], np.ndarray[any, any]]]]): The location at which this np.ndarray is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             array (Optional[np.ndarray[Any, Any]]):  Array to store and check dimensions of; if None, then dimensions are not checked. The array has to be filled in later on_
         """
         if array is not None:
@@ -293,7 +294,7 @@ class StorageNdarray():
         self.relative_storage_location : str = relative_storage_location
         #some storage locations/data might be different for C++ magritte and python magritte, thus we need some conversion for legacy functionality
         self.legacy_relative_storage_location = self.relative_storage_location
-        self.legacy_conversion_function : Optional[Callable[[], None]] = None #function to apply after reading the data
+        self.legacy_conversion_function : Optional[Callable[[Any], np.ndarray]] = None #function to apply after reading the data
         if legacy_converter is not None:
             self.legacy_relative_storage_location = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
@@ -445,6 +446,9 @@ class DelayedListOfClassInstances(Generic[T]):
     def is_complete(self) -> bool:
         return self.list is not None
     
+    def __str__(self) -> str:
+        return "Delayed list of class instances: " + self.instance_name + " of parameter size: "+str(self.length_param)
+    
     # TODO: automatically call construct when reading from file
 
     # def get(self) -> List[T]:
@@ -464,41 +468,74 @@ class DataCollection():
     def __init__(self, parameters : Parameters) -> None:
         """Initializes the DataCollection with an empty list of storageTypes
         """
-        self.parameters: Parameters = parameters #list of parameters to read
-        self.localParameters: List[Parameter[Any]] = [] #list of parameters within classes
-        self.storedData : List[StorageTypes] = []
-        self.storedDataDict : Dict[str, int] = {}
-        self.inferredData : List[InferredTypes] = []
-        self.inferredDataDict : Dict[str, int] = {}
-        self.delayedLists : List[DelayedLists] = []
+        self.parameters: Parameters = parameters #list of global parameters for a model
+        self.localParameters: List[Parameter[Any]] = [] #list of parameters within class instances; might not make sense to access globally, so no associated dictionary
+        self.storedData: List[StorageTypes] = []
+        self.storedDataDict: Dict[str, int] = {}
+        self.inferredData: List[InferredTypes] = []
+        self.inferredDataDict: Dict[str, int] = {}
+        self.delayedLists: List[DelayedLists] = []
 
     def add_data(self, data : StorageTypes, name : str) -> None:
         """Adds a single dataset to the DataCollection. Does not add the dataset if a dataset with the same name is already present.
 
         Args:
             data (storageTypes): Dataset to add
+            name (str): key for retrieving the data
         """
         if name not in self.storedDataDict:
             self.storedDataDict[name] = len(self.storedData)
             self.storedData.append(data)
 
     def get_data(self, name : str) -> StorageTypes:
+        """Returns the data with the given key
+
+        Args:
+            name (str): the key
+
+        Returns:
+            StorageTypes: The data stored at that key
+        """
         return self.storedData[self.storedDataDict[name]]
 
     
     def add_inferred_dataset(self, inferred_dataset : InferredTypes, name : str) -> None:
+        """Adds a single inferred dataset to the DataCollection. Does not add the dataset if a dataset with the same name is already present.
+
+        Args:
+            inferred_dataset (InferredTypes): Inferred dataset to add
+            name (str): key for retrieving the data
+        """
         if name not in self.storedDataDict:
             self.inferredDataDict[name] = len(self.inferredData)
             self.inferredData.append(inferred_dataset)
 
     def get_inferred_dataset(self, name : str) -> InferredTypes:
+        """Returns the inferred data with the given key
+
+        Args:
+            name (str): the key
+
+        Returns:
+            StorageTypes: The inferred data stored at that key
+        """
         return self.inferredData[self.inferredDataDict[name]]
 
 
     def add_delayed_list(self, delayed_list : DelayedLists) -> None:
+        """Adds a delayed list to the DataCollection.
+
+        Args:
+            delayed_list (DelayedLists): The delayed list
+        """
         self.delayedLists.append(delayed_list)
 
     def add_local_parameter(self, local_parameter : Parameter[Any]) -> None:
+        """Adds a local parameter to the DataCollection. As the parameter is local, it will not be made searchable by key.
+
+        Args:
+            local_parameter (Parameter[Any]): _description_
+        """
         self.localParameters.append(local_parameter)
 
 
@@ -520,6 +557,11 @@ class DataCollection():
         return isComplete
     
     def infer_data(self) -> None:
+        """Infers all stored inferred datasets.
+
+        Raises:
+            ValueError: if the stored datasets are not yet complete.
+        """
         #safety check: check once more if the dataset is complete before wrongfully inferring some data
         if not self.is_data_complete():
             raise ValueError("Stored data has not yet been fully set. Therefore we cannot yet infer the other data.")
@@ -536,6 +578,7 @@ class Types:
     IndexInfo = torch.int64 #64 bit signed int # for index information
     LevelPopsInfo = torch.float64 #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
     #TODO: check if more accurate workaround can be added
+    FrequencyInfo = torch.float64 #64 bit float; might work with 32 bit floats instead
     Enum = torch.int64 #64 bit signed int # for enums
     Bool = torch.bool #boolean # for truth values
     NpString = np.dtype('S') #use null-terminated objects to store strings in hdf5; unicode is not supported

@@ -13,3 +13,8 @@ class Lines:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
         self.lineProducingSpecies : DelayedListOfClassInstances[LineProducingSpecies] = DelayedListOfClassInstances(self.parameters.nlspecs, lambda i: LineProducingSpecies(self.parameters, self.dataCollection, i), "lineProducingSpecies"); dataCollection.add_delayed_list(self.lineProducingSpecies)
+
+    def get_total_number_lines(self) -> int:
+        return sum([lspec.linedata.nrad.get() for lspec in self.lineProducingSpecies])
+
+    # def get_all_line_opacities_emissivities

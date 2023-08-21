@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from magrittetorch.utils.storagetypes import DataCollection, StorageTensor, StorageNdarray
 from magrittetorch.model.parameters import Parameter
-from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple
+from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable
 
 # TODO: complete docs
 
@@ -34,27 +34,32 @@ class IO:
             #read all delayed lists; Dev Note: the storedData list might get appended during reading the delayedLists
             for delayedlist in dataCollection.delayedLists:
                 delayedlist.construct()
-            #now read all local parameters, as they might have been constructed within a delayed list
-            for localParameter in dataCollection.localParameters:
-                self.read_parameter(file, localParameter, localParameter.legacy_name)
+                #now read all local parameters, as they might have been constructed within a delayed list
+                for localParameter in dataCollection.localParameters:
+                    #TODO: reading every local parameter again is inefficient; keep track of currently read parameter/not yet read parameters
+                    self.read_parameter(file, localParameter, localParameter.legacy_name, localParameter.legacy_conversion_function)
             for datapiece in dataCollection.storedData:
-                print(datapiece.legacy_relative_storage_location)
                 if type(datapiece) is StorageTensor:
-                    datapiece.set(self.read_torch(file, datapiece.legacy_relative_storage_location))
+                    legacy_data_torch = self.read_torch(file, datapiece.legacy_relative_storage_location)
+                    if datapiece.legacy_conversion_function is not None: legacy_data_torch = datapiece.legacy_conversion_function(legacy_data_torch)
+                    datapiece.set(legacy_data_torch)
                 elif type(datapiece) is StorageNdarray:
-                    datapiece.set(self.read_numpy(file, datapiece.legacy_relative_storage_location))
+                    legacy_data_numpy = self.read_numpy(file, datapiece.legacy_relative_storage_location)
+                    if datapiece.legacy_conversion_function is not None: legacy_data_numpy = datapiece.legacy_conversion_function(legacy_data_numpy)
+                    # print(legacy_data_numpy)
+                    datapiece.set(legacy_data_numpy)
                 else: 
                     raise TypeError("Data reading not yet implemented for " + str(type(datapiece)))
-                if datapiece.legacy_conversion_function is not None:
-                    datapiece.legacy_conversion_function()#convert data if necessary
             for inferredDatapiece in dataCollection.inferredData:
                 if inferredDatapiece.legacy_relative_storage_location is not None:
                     try:
-                        inferredDatapiece.set(self.read_torch(file, inferredDatapiece.legacy_relative_storage_location))
-                        if inferredDatapiece.legacy_conversion_function is not None:
-                            inferredDatapiece.legacy_conversion_function()
+                        #for now only inferred tensors exist
+                        legacy_data_torch = self.read_torch(file, inferredDatapiece.legacy_relative_storage_location)
+                        if inferredDatapiece.legacy_conversion_function is not None: legacy_data_torch = inferredDatapiece.legacy_conversion_function(legacy_data_torch)
+                        inferredDatapiece.set(legacy_data_torch)
                     except TypeError as e:
                         print(e)#inferred data might not be set
+
         else:#non-legacy mode reading
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.name)
@@ -157,23 +162,25 @@ class IO:
 
 
     T = TypeVar('T')
-    def read_parameter(self, file : h5py.File, parameter : Parameter[Any], parameter_path : str) -> None:
+    def read_parameter(self, file : h5py.File, parameter : Parameter[Any], parameter_path : str, legacy_conversion_function: Optional[Callable[[Any], T]] = None) -> None:
         """Reads a single parameter from the given hdf5 file
 
         Args:
             file (h5py.File): The file to read from
             attrs_name (str): The name of the corresponding attribute
             parameter (Parameter): The parameter to read
+            legacy_conversion_function (Optional[Callable[[Any], T]]): Optionally adds a conversion function for the read data to determine the value of the parameter
         """
-        path : str; attribute : str 
-        #mypy doesnt allow for unpacking of strings, thus ignore the warnings
-        try:
-            print(parameter.name)
-            path, attribute = parameter_path.rsplit("/", 1)#type: ignore
-            print(path, attribute)
-            parameter.set(file[path].attrs[attribute])
-        except ValueError:#guard against not enough parameters to unpack
-            parameter.set(file.attrs[parameter.name])
+        if legacy_conversion_function is not None:
+            parameter.set(legacy_conversion_function(file[parameter_path]))#legacy conversion function will act directly on a dataset to infer the parameter value
+        else:
+            try:
+                path : str; attribute : str 
+                #mypy doesnt allow for unpacking of strings, thus ignore the warnings
+                path, attribute = parameter_path.rsplit("/", 1)#type: ignore
+                parameter.set(file[path].attrs[attribute])
+            except ValueError:#guard against not enough parameters to unpack
+                parameter.set(file.attrs[parameter_path])
 
     def write_parameter(self, file : h5py.File, parameter : Parameter[Any], storage_path : str) -> None:
         """Writes a single parameter to the given hdf5 file
@@ -194,4 +201,14 @@ class IO:
 
     
         
+class LegacyHelper:
+    """Collection of helper functions for helping reading legacy C++ magritte models, for filling in gaps of metadata
+    """
+    @staticmethod
+    def read_length_of_group(search: str, h5pygroup: h5py.Group) -> int:
+        return len([1 for key in h5pygroup.keys() if search in key])
+
+    @staticmethod
+    def read_length_of_dataset(h5pydataset: h5py.Dataset) -> int:
+        return len(h5pydataset)
 

@@ -1,4 +1,4 @@
-from typing import Optional, Generic, TypeVar, Iterator
+from typing import Optional, Generic, TypeVar, Iterator, Tuple, Callable, Any
 
 T = TypeVar('T')
 # TODO: maybe change compile time of type checking to runtime checking; hmm, think about performance implications
@@ -9,11 +9,13 @@ class Parameter(Generic[T]):
     Args:
         Generic (_type_): Type of the value of the parameter
     """
-    def __init__(self, name : str, legacy_name : Optional[str] = None) -> None:
-        self.name : str = name
-        self.legacy_name : str = self.name
-        if legacy_name is not None:
-            self.legacy_name = legacy_name
+    def __init__(self, name : str, legacy_converter : Optional[Tuple[str, Optional[Callable[[Any], T]]]] = None) -> None:
+        self.name: str = name
+        self.legacy_name: str = self.name
+        self.legacy_conversion_function: Optional[Callable[[Any], T]] = None
+        if legacy_converter is not None:
+            self.legacy_name = legacy_converter[0]
+            self.legacy_conversion_function = legacy_converter[1]
         self.value : Optional[T] = None
     
     def __str__(self) -> str:
@@ -56,7 +58,7 @@ class Parameters:
         Parameter: parameters for a model
     """
     npoints = Parameter[int]("npoints")
-    nfreqs = Parameter[int]("nfreqs")
+    # nfreqs = Parameter[int]("nfreqs")
     nrays = Parameter[int]("nrays")
     # name = Parameter[str]("name")
     nboundary = Parameter[int]("nboundary")

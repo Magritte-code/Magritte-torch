@@ -26,8 +26,8 @@ def multi_arange(start : torch.Tensor, delta : torch.Tensor, device : torch.devi
     """
     #increment will contain the increments required
     #delta is 1D tensor, so sum will be a 0D tensor
-    increment : torch.Tensor = torch.ones(torch.sum(delta, dim=0), device=device).type(Types.IndexInfo) #type: ignore
+    increment : torch.Tensor = torch.ones(torch.sum(delta, dim=0), device=device, dtype=Types.IndexInfo) #type: ignore
     end = delta-1 + start
     increment[0] = start[0]
-    increment[delta[:-1].cumsum(dim = 0)] = start[1:]-end[:-1]
+    increment[delta[:-1].cumsum(dim = 0, dtype=Types.IndexInfo)] = start[1:]-end[:-1]
     return increment.cumsum(dim = 0)
