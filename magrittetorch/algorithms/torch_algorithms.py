@@ -24,10 +24,14 @@ def multi_arange(start : torch.Tensor, delta : torch.Tensor, device : torch.devi
     Returns:
         torch.Tensor: The resulting 1D tensor of arange'd pieces put after eachother 
     """
-    #increment will contain the increments required
     #delta is 1D tensor, so sum will be a 0D tensor
-    increment : torch.Tensor = torch.ones(torch.sum(delta, dim=0), device=device, dtype=Types.IndexInfo) #type: ignore
-    end = delta-1 + start
-    increment[0] = start[0]
-    increment[delta[:-1].cumsum(dim = 0, dtype=Types.IndexInfo)] = start[1:]-end[:-1]
-    return increment.cumsum(dim = 0)
+    keep_indices: torch.Tensor = delta!=0#zero deltas cause nonsense, so prune them
+    keep_delta = delta[keep_indices]
+    keep_start = start[keep_indices]
+    #increment will contain the increments required
+    increment : torch.Tensor = torch.ones(torch.sum(keep_delta, dim=0), device=device, dtype=Types.IndexInfo) #type: ignore
+    keep_end = keep_delta-1 + keep_start
+    increment[0] = keep_start[0]
+    increment[keep_delta[:-1].cumsum(dim = 0, dtype=Types.IndexInfo)] = keep_start[1:]-keep_end[:-1]
+    
+    return increment.cumsum(dim = 0, dtype=Types.IndexInfo)

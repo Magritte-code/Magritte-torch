@@ -17,6 +17,7 @@ class BoundaryCondition(Enum):
     CMB : int = 2
 
 #TODO: add functionality for reduced boundary to class (for better ray tracing); just return some mask on the boundary and a reduced point2boundary
+#Note: this will depend on the model geometry type
 class Boundary:
     
     def __init__(self, params : Parameters, dataCollection : DataCollection) -> None:

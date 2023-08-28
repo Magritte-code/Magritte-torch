@@ -39,6 +39,7 @@ class Parameter(Generic[T]):
         Args:
             value (T): New value for parameter
         """
+        print("setting param", str(self), "to value", value)
         if self.value == None:
             self.value = value
             return

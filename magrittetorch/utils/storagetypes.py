@@ -1,5 +1,5 @@
 import torch
-from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable, TypeAlias, Dict
+from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable, TypeAlias, Dict, Iterator
 from magrittetorch.model.parameters import Parameter, Parameters
 import numpy as np
 from astropy import units
@@ -33,10 +33,11 @@ class StorageTensor():
             self.legacy_conversion_function = legacy_converter[1]
 
         self.dtype = dtype
-        self.unit : units.Unit = unit
-        self.tensor : Optional[torch.Tensor] = tensor
-        self.dims : List[Union[Parameter[int], int, None]] = dims
-        self.isSet : bool = False
+        self.unit: units.Unit = unit
+        self.tensor: Optional[torch.Tensor] = tensor
+        self.tensormap: Dict[torch.device, torch.Tensor] = {}
+        self.dims: List[Union[Parameter[int], int, None]] = dims
+        self.isSet: bool = False
 
     def check_dims(self, new_tensor : torch.Tensor) -> None:
         """Checks the dimensions of the stored tensor. Also checks type of data in tensor.
@@ -83,6 +84,7 @@ class StorageTensor():
         
     def set(self, tensor : torch.Tensor) -> None:
         """Sets the internal data to the given torch.Tensor if the dimensions are correct. Does not automatically convert units.
+        Invalidates mapped references to the data, as the internal data has changed.
 
         Args:
             tensor (torch.Tensor): the new torch.Tensor
@@ -94,6 +96,8 @@ class StorageTensor():
         """
         self.check_dims(tensor)
         self.tensor = tensor
+        #also invalidate mapped tensors, as the data is no longer correct
+        self.tensormap = {}
 
     def get_astropy(self) -> units.Quantity:
         """Returns the stored astropy Quantity
@@ -107,8 +111,11 @@ class StorageTensor():
         return self.get().numpy(force=True)*self.unit
 
 
-    def get(self) -> torch.Tensor:
-        """Returns the stored torch.Tensor
+    def get(self, device: Optional[torch.device] = None) -> torch.Tensor:
+        """Returns the stored torch.Tensor. Optionally returns a reference to the tensor on the specified device, without remapping if already mapped to that device.
+
+        Args:
+            device (Optional[torch.device]): if None, return the tensor on cpu. Else, return a reference to the tensor on this device.
 
         Raises:
             ValueError: If no data has yet been stored
@@ -118,6 +125,12 @@ class StorageTensor():
         """
         if self.tensor is None:
             raise ValueError("The data has not yet been set for " +str(self.relative_storage_location))
+        #if device is specified, grab the reference to the already mapped tensor
+        if device is not None:
+            #map to device if not already present
+            if device not in self.tensormap:
+                self.tensormap[device] = self.tensor.to(device)
+            return self.tensormap[device]
         return self.tensor
     
     def get_type(self) -> torch.dtype:
@@ -163,6 +176,7 @@ class InferredTensor():
             self.legacy_conversion_function = legacy_converter[1]
 
         self.tensor : Optional[torch.Tensor] = None
+        self.tensormap: Dict[torch.device, torch.Tensor] = {}
         self.dims : List[Union[Parameter[int], int, None]] = dims
         self.isSet : bool = False
 
@@ -210,7 +224,8 @@ class InferredTensor():
         self.set(torch.from_numpy(np.array(astropy_quantity.to(self.unit))))
         
     def set(self, tensor : torch.Tensor) -> None:
-        """Sets the internal data to the given torch.Tensor if the dimensions are correct.
+        """Sets the internal data to the given torch.Tensor if the dimensions are correct. Does not automatically convert units.
+        Invalidates mapped references to the data, as the internal data has changed.
 
         Args:
             tensor (torch.Tensor): the new torch.Tensor
@@ -222,6 +237,8 @@ class InferredTensor():
         """
         self.check_dims(tensor)
         self.tensor = tensor
+        #also invalidate mapped tensors, as the data is no longer correct
+        self.tensormap = {}
 
     def infer(self) -> None:
         """Infers the data that should be in this structure if not yet set. Only call after all storageTensors are complete.
@@ -245,17 +262,26 @@ class InferredTensor():
         """
         return self.get().numpy(force=True)*self.unit
 
-    def get(self) -> torch.Tensor:
-        """Returns the stored torch.Tensor
+    def get(self, device: Optional[torch.device] = None) -> torch.Tensor:
+        """Returns the stored torch.Tensor. Optionally returns a reference to the tensor on the specified device, without remapping if already mapped to that device.
+
+        Args:
+            device (Optional[torch.device]): if None, return the tensor on cpu. Else, return a reference to the tensor on this device.
 
         Raises:
-            ValueError: If no tensor has yet been stored
+            ValueError: If no data has yet been stored
 
         Returns:
             torch.Tensor: the stored torch.Tensor
         """
         if self.tensor is None:
-            raise ValueError("The data has not yet been set for an inferred tensor")
+            raise ValueError("The data has not yet been set for " +str(self.relative_storage_location))
+        #if device is specified, grab the reference to the already mapped tensor
+        if device is not None:
+            #map to device if not already present
+            if device not in self.tensormap:
+                self.tensormap[device] = self.tensor.to(device)
+            return self.tensormap[device]
         return self.tensor
     
     def get_type(self) -> torch.dtype:
@@ -273,6 +299,14 @@ class InferredTensor():
             bool: Whether the dataset has already been set
         """
         return self.tensor is not None
+    
+# Some helper data is constant per iteration and should not be recomputed constantly
+class InferredTensorPerNLTEIter(InferredTensor):
+    """This class is identical to InferredTensor, but is used to denote data which is constant over a single NLTE iteration. After each NLTE iteration, _force_infer will be called. 
+    """
+    def __init__(self, dtype: torch.dtype, dims: List[Parameter[int] | int | None], unit: units.Unit, infer_function: Callable[[], torch.Tensor], relative_storage_location: str | None = None, legacy_converter: Tuple[str, Callable[[Any], torch.Tensor] | None] | None = None):
+        super().__init__(dtype, dims, unit, infer_function, relative_storage_location, legacy_converter)
+
 
 # Some data (strings) cannot be put into pytorch tensors (and do not need to be put there)
 class StorageNdarray():
@@ -449,6 +483,12 @@ class DelayedListOfClassInstances(Generic[T]):
     def __str__(self) -> str:
         return "Delayed list of class instances: " + self.instance_name + " of parameter size: "+str(self.length_param)
     
+    def __iter__(self) -> Iterator[T]:
+        if self.list is not None:
+            for element in self.list:
+                yield element
+
+    
     # TODO: automatically call construct when reading from file
 
     # def get(self) -> List[T]:
@@ -568,6 +608,13 @@ class DataCollection():
         #Dev note: inferred data might rely on other inferred data, so ordering of self.inferredData might be important. In general, I recommend to put the inferred datasets last in the constructor (in this way, the data of the subclass will be inferred first)
         for inferred_dataset in self.inferredData:
             inferred_dataset.infer()
+
+    def reset_NLTE_infer(self) -> None:
+        """Reinfers the InferredTensorPerNLTEIter data
+        """
+        for inferred_dataset in self.inferredData:
+            if type(inferred_dataset) is InferredTensorPerNLTEIter:
+                inferred_dataset._force_infer()
 
     #TODO: maybe add inspection capabilities for figuring out for each parameter which dataset's dimensions are influenced; might be useful for debugging
     

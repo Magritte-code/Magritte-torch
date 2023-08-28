@@ -3,6 +3,7 @@ from magrittetorch.utils.storagetypes import StorageTensor, Types, DataCollectio
 from magrittetorch.model.parameters import Parameters
 import torch
 from astropy import units
+from astropy.constants import c#speed of light
 
 storagedir : str = "geometry/points/"
 
@@ -19,3 +20,4 @@ class Points:
         temp : torch.Tensor = torch.cumsum(self.n_neighbors.get(), dim=0).roll(1)
         temp[0] = 0
         return temp
+

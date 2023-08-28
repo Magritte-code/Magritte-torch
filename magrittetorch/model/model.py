@@ -19,10 +19,6 @@ class NgAccelerationType(Enum):
     Adaptive = 1
 
 # Dummy classes; should be refactored into seperate files
-class Lines:
-    # Define the Lines class here
-    pass
-
 class Radiation:
     # Define the Radiation class here
     pass
@@ -41,7 +37,6 @@ class Model:
         self.chemistry: Chemistry = Chemistry(self.parameters, self.dataCollection)
         self.thermodynamics: Thermodynamics = Thermodynamics(self.parameters, self.dataCollection)
         self.sources : Sources = Sources(self.parameters, self.dataCollection)
-        self.lines: Union[Lines, None] = None
         self.radiation: Union[Radiation, None] = None
         self.images: List[Image] = []
 

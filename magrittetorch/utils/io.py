@@ -172,7 +172,10 @@ class IO:
             legacy_conversion_function (Optional[Callable[[Any], T]]): Optionally adds a conversion function for the read data to determine the value of the parameter
         """
         if legacy_conversion_function is not None:
-            parameter.set(legacy_conversion_function(file[parameter_path]))#legacy conversion function will act directly on a dataset to infer the parameter value
+            try:
+                parameter.set(legacy_conversion_function(file[parameter_path]))#legacy conversion function will act directly on a dataset to infer the parameter value
+            except KeyError:
+                parameter.set(legacy_conversion_function(file.attrs[parameter_path]))#legacy conversion function acting on an attribute
         else:
             try:
                 path : str; attribute : str 

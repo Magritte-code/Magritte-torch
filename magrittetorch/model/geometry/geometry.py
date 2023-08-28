@@ -5,7 +5,9 @@ from magrittetorch.model.geometry.boundary import Boundary
 from magrittetorch.model.geometry.rays import Rays
 from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.storagetypes import DataCollection, Types
+from magrittetorch.model.parameters import Parameter
 from magrittetorch.algorithms.torch_algorithms import multi_arange
+from astropy.constants import c
 import torch
 
 class Frame(Enum):
@@ -17,17 +19,27 @@ class Tracer(Enum):
     Imagetracer = 1
 
 class GeometryType(Enum):
-    General3D : int = 0
-    SpericallySymmetric1D : int = 1
+    General3D: int = 0 #TODO: add options for the general3D geometry: specify which type of boundary is expected; axisalignedcube or sphere (for easier raytracing; Note: enum inside enum looks ridiculous, so just add extra enums to this list)
+    SpericallySymmetric1D: int = 1
 
 class Geometry:
-    def __init__(self, params : Parameters, dataCollection : DataCollection) -> None:
+    def __init__(self, params: Parameters, dataCollection: DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
         self.points: Points = Points(params, self.dataCollection)
         self.boundary: Boundary = Boundary(params, self.dataCollection)
         self.rays: Rays = Rays(params, self.dataCollection)
-        self.geometrytype : GeometryType = GeometryType.General3D
+        self.geometryType: Parameter[GeometryType] = Parameter("geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType)); self.dataCollection.add_local_parameter(self.geometryType)
+
+    def __legacy_convert_geometryType(self, is_spherically_symmetric: bool) -> GeometryType:
+        print("is the model spherically symmetric", is_spherically_symmetric, type(is_spherically_symmetric))
+        match is_spherically_symmetric:
+            case "true":
+                return GeometryType.SpericallySymmetric1D
+            case "false":
+                return GeometryType.General3D
+            case _:
+                raise KeyError("Something went wrong with setting the model geometry")
     
     # def map_data_to_device(self) -> None:
     #     self.points.map_data_to_device()
@@ -89,23 +101,23 @@ class Geometry:
     #         torch.Tensor: Distance of the shells on the rays, with respect to the origin_coords and the raydirection.
     #         torch.Tensor: Information for ordering which points to prefer for the next point on the ray. Lower is better.
     #     """
-    #     match self.geometrytype:
-    #         case GeometryType.General3D:
+    #     match self.geometryType:
+    #         case geometryType.General3D:
     #             return self.distance_in_direction_3D_geometry(origin_coords, raydirection, points_position, distance_travelled)
-    #         case GeometryType.SpericallySymmetric1D:
+    #         case geometryType.SpericallySymmetric1D:
     #             return self.distance_in_direction_1D_spherical_symmetry(origin_coords, raydirection, points_position, distance_travelled)
     #         case _:
-    #             raise TypeError("Geometry type not yet supported: ", self.geometrytype)
+    #             raise TypeError("Geometry type not yet supported: ", self.geometryType)
 
     def get_next(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, 
                  distance_travelled : torch. Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        match self.geometrytype:
+        match self.geometryType.get():
             case GeometryType.General3D:
                 return self.get_next_3D_geometry(origin_coords, raydirection, curr_points_index, distance_travelled, device, positions_device, neighbors_device, n_neighbors_device, cum_n_neighbors_device)
             case GeometryType.SpericallySymmetric1D:
                 return self.get_next_1D_spherical_symmetry(origin_coords, raydirection, curr_points_index, distance_travelled, device, positions_device)
             case _:
-                raise TypeError("Geometry type not yet supported: ", self.geometrytype)
+                raise TypeError("Geometry type not yet supported: ", self.geometryType)
 
 
     def get_next_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, distance_travelled: torch.Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -116,10 +128,16 @@ class Geometry:
         masked_n_neighbors = n_neighbors_device[curr_points_index]
         input_size =origin_coords.size(dim=0)
 
-        indices_to_check = multi_arange(torch.gather(cum_n_neighbors_device, 0, curr_points_index), torch.gather(n_neighbors_device, 0, curr_points_index), device)
-        lengthened_curr_ids = torch.repeat_interleave(curr_points_index, masked_n_neighbors)
-        lengthened_origin_coords = torch.repeat_interleave(origin_coords, masked_n_neighbors, dim=0)
-        lengthened_distance_travelled = torch.repeat_interleave(distance_travelled, masked_n_neighbors)
+        # indices_to_check = multi_arange(torch.gather(cum_n_neighbors_device, 0, curr_points_index), torch.gather(n_neighbors_device, 0, curr_points_index), device)
+        indices_to_check = multi_arange(cum_n_neighbors_device[curr_points_index], n_neighbors_device[curr_points_index], device)
+        # lengthened_curr_ids = torch.repeat_interleave(curr_points_index, masked_n_neighbors)
+        # lengthened_origin_coords = torch.repeat_interleave(origin_coords, masked_n_neighbors, dim=0)
+        # lengthened_distance_travelled = torch.repeat_interleave(distance_travelled, masked_n_neighbors)
+        
+        lengthening_indices = torch.arange(masked_n_neighbors.size(dim=0), device=device).repeat_interleave(masked_n_neighbors)
+        lengthened_curr_ids = curr_points_index[lengthening_indices]
+        lengthened_origin_coords = origin_coords[lengthening_indices, :]
+        lengthened_distance_travelled = distance_travelled[lengthening_indices]
 
         neighbors_to_check = torch.gather(neighbors_device, 0, indices_to_check)
 
@@ -130,7 +148,8 @@ class Geometry:
         wrongdirection = xdistance <= currdistance
         #add penalty to points in wrong direction, making sure that it is never the correct point;
         #note: penalty 1 plus max value to make sure that these penalized values are higher than any original value
-        ydistance += wrongdirection.type(Types.GeometryInfo) * (1.0 + torch.max(ydistance, 0)[0])
+        # ydistance += wrongdirection.type(Types.GeometryInfo) * (1.0 + torch.max(ydistance, 0)[0])
+        ydistance += wrongdirection * (1.0 + torch.max(ydistance, 0)[0])
 
         scatter_ids = torch.repeat_interleave(torch.arange(input_size, device=device).type(torch.int64), masked_n_neighbors)
 
@@ -191,11 +210,71 @@ class Geometry:
 
         #finally compute the distances for the new indices
         radii_next = torch.gather(radii_device, 0, next_index)
-        mask_ray_intersects_shell : torch.Tensor = (radii_next > Rsin).type(torch.float64)
+        mask_ray_intersects_shell : torch.Tensor = (radii_next > Rsin).type(Types.GeometryInfo)
         delta_dist = torch.sqrt((radii_next**2-Rsin**2)*mask_ray_intersects_shell)#distance between intersections
         next_distance = Rcos + (1-2*in_criterion) * delta_dist
 
         return next_index, next_distance
+    
+    def get_doppler_shift(self, curr_point: torch.Tensor, origin_position:torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, distance_travelled: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+        """Computes the doppler shift for arbitrary geometries by assuming non-relativistic velocities.
 
+        Args:
+            curr_point (torch.Tensor): Indices of the points for which we want to compute the doppler shift. Has dimensions [NPOINTS]
+            origin_position (torch.Tensor): 3D position of the origin of the ray. Is only used in spherically symmetric geometries. Has dimensions [NPOINTS, 3]
+            origin_velocity (torch.Tensor): 3D velocity of the origin of the ray. Has dimensions [NPOINTS, 3]
+            raydir (torch.Tensor): Ray directions. Has dimensions [NPOINTS, 3]
+            distance_travelled (torch.Tensor): Distance travelled by the ray. Is only used in spherically symmetric geometries. Has dimensions [NPOINTS]
+            device (torch.device, optional): Device on which to compute. Defaults to torch.device("cpu").
 
+        Raises:
+            TypeError: Is the geometry type has not yet been implemented.
+
+        Returns:
+            torch.Tensor: The doppler shift. Has dimensions [NPOINTS]
+        """
+        curr_velocity_device = self.points.velocity.get(device)[curr_point]
+        match self.geometryType.get():
+            case GeometryType.General3D:
+                return self.get_doppler_shift_3D_geometry(curr_velocity_device, origin_velocity, raydir)
+            case GeometryType.SpericallySymmetric1D:
+                curr_radius_device = self.points.position.get(device)[curr_point,0]
+                return self.get_doppler_shift_1D_spherical_symmetry(curr_velocity_device[:,0], origin_position, origin_velocity, raydir, curr_radius_device, distance_travelled)
+            case _:
+                raise TypeError("Geometry type not yet supported: ", self.geometryType)
+            
+    def get_doppler_shift_3D_geometry(self, current_velocity: torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor) -> torch.Tensor:
+        """Returns the doppler shift factor for a 3D geometry by assuming non-relativistic velocities
+
+        Args:
+            current_velocity (torch.Tensor): Velocity at the point for which we want the doppler shift. Has dimensions [NPOINTS, 3]
+            origin_velocity (torch.Tensor): Velocity at the origin of the ray. Has dimensions [NPOINTS, 3]
+            raydir (torch.Tensor): Ray directions. Has dimensions [NPOINTS, 3]
+
+        Returns:
+            torch.Tensor: The doppler shift. Has dimension [NPOINTS]
+        """
+        return 1.0 - torch.sum((current_velocity-origin_velocity)*raydir, dim=1)/c.value#type: ignore
+        
+    def get_doppler_shift_1D_spherical_symmetry(self, current_velocity: torch.Tensor, origin_position: torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, curr_radius: torch.Tensor, distance_travelled: torch.Tensor) -> torch.Tensor:
+        """Returns the doppler shift factor for a 1D spherically symmetric geometry by assuming non-relativistic velocities
+
+        Args:
+            current_velocity (torch.Tensor): 1D spherically symmetric velocity at the point for which we want the doppler shift. Has dimensions [NPOINTS]
+            origin_position (torch.Tensor): 3D position of the origin of the ray. Has dimensions [NPOINTS, 3]
+            origin_velocity (torch.Tensor): 3D velocity at the origin of the ray. Has dimensions [NPOINTS, 3]
+            raydir (torch.Tensor): Ray directions. Has dimensions [NPOINTS, 3]
+            curr_radius (torch.Tensor): 1D radius of the point for which we want the doppler shift. Has dimensions [NPOINTS]
+            distance_travelled (torch.Tensor): Currently travelled distance on the ray. Has dimensions [NPOINTS]
+
+        Returns:
+            torch.Tensor: The doppler shift. Has dimensions [NPOINTS]
+        """
+        distance_to_origin = torch.sum(-origin_position*raydir, dim=1) #dims: [NPOINTS]
+        distance_diff = distance_travelled - distance_to_origin #dims: [NPOINTS]
+        torch.set_printoptions(10)
+        print("fraction should be below 1", distance_diff/curr_radius, distance_diff, distance_to_origin)#debug
+        # Note: projected velocity of the shell onto the ray is = distance_diff/radius * current_velocity.
+        print("curr part", current_velocity * distance_diff / curr_radius, "origin part", torch.sum(origin_velocity * raydir, dim = 1), origin_velocity)
+        return 1.0 - (current_velocity * distance_diff / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
             
