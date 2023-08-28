@@ -12,7 +12,7 @@ class Points:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
         self.position: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m, storagedir+"position"); self.dataCollection.add_data(self.position, "position") # Position coordinates
-        self.velocity: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.dimensionless_unscaled, storagedir+"velocity"); self.dataCollection.add_data(self.velocity, "velocity") # Velocity vectors (in units of speed of light)
+        self.velocity: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m/units.s, storagedir+"velocity", legacy_converter=[storagedir+"velocity", self._legacy_import_velocity]); self.dataCollection.add_data(self.velocity, "velocity") # Velocity vectors (in m/s)
         self.n_neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, storagedir+"n_neighbors"); self.dataCollection.add_data(self.n_neighbors, "n_neighbors") # number of neighbors per point
         self.neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [None], units.dimensionless_unscaled, storagedir+"neighbors"); self.dataCollection.add_data(self.neighbors, "neighbors") # linearized neighbors vector
 
@@ -21,3 +21,5 @@ class Points:
         temp[0] = 0
         return temp
 
+    def _legacy_import_velocity(self, dimensionless_velocity: torch.Tensor) -> torch.Tensor:
+        return c.value*dimensionless_velocity

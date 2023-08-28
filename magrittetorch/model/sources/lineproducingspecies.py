@@ -17,7 +17,7 @@ class ApproxLambda:
     pass
 
 class LineProducingSpecies:
-    MAX_DISTANCE_OPACITY_CONTRIBUTION : float = 10.0#TODO: put somewhere else
+
     def __init__(self, params: Parameters, dataCollection : DataCollection, lineproducingspeciesindex: int) -> None:
         storagedir : str = "lines/lineProducingSpecies_"+str(lineproducingspeciesindex)+"/"#TODO: is legacy io for now; figure out how to switch to new structure
         self.parameters: Parameters = params
@@ -144,7 +144,7 @@ class LineProducingSpecies:
         """
         return self.linequadrature.nquads.get()*self.linedata.nrad.get()
     
-    def get_relevant_line_indices(self, opacity_compute_frequencies: torch.Tensor, sorted_linewidths_device: torch.Tensor, sorted_linefreqs_device: torch.Tensor, device: torch.device = torch.device("cpu")) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_relevant_line_indices(self, opacity_compute_frequencies: torch.Tensor, sorted_linewidths_device: torch.Tensor, sorted_linefreqs_device: torch.Tensor, device: torch.device = torch.device("cpu"), MAX_DISTANCE_OPACITY_CONTRIBUTION: float = 10.0) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes which line should be evaluated when evaluating line opacities/emissivites at given frequencies. TODO: can be made more efficient by inspecting line width
 
         Args:
@@ -158,8 +158,8 @@ class LineProducingSpecies:
         """
         # linefreqs_device = self.linedata.frequency.get().to(device)
         # linewidths_device = self.get_line_widths(device) also subset to actual point indices [corresponding_point_indices, :]
-        min_bound_linefreqs = sorted_linefreqs_device[None, :] - self.MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
-        max_bound_linefreqs = sorted_linefreqs_device[None, :] + self.MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
+        min_bound_linefreqs = sorted_linefreqs_device[None, :] - MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
+        max_bound_linefreqs = sorted_linefreqs_device[None, :] + MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
 
         lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False)
         upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies)
