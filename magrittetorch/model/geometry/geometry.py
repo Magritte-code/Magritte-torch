@@ -7,6 +7,7 @@ from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.storagetypes import DataCollection, Types
 from magrittetorch.model.parameters import Parameter
 from magrittetorch.algorithms.torch_algorithms import multi_arange
+from magrittetorch.utils.constants import min_dist
 from astropy.constants import c
 import torch
 
@@ -111,6 +112,25 @@ class Geometry:
 
     def get_next(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, 
                  distance_travelled : torch. Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns the next set of points on the ray, given the current points and ray direction.
+
+        Args:
+            origin_coords (torch.Tensor): Coordinates of the origin points. Has dimensions [NPOINTS, 3]
+            raydirection (torch.Tensor): Ray direction. Has dimensions [3]
+            curr_points_index (torch.Tensor): Current point indices. Has dimensions [NPOINTS]
+            distance_travelled (torch.Tensor): Current travelled distance. Has dimensions [NPOINTS]
+            device (torch.device): Device on which to compute.
+            positions_device (torch.Tensor): Positions of all points in the model. TODO: get in this function. Has dimensions [parameters.npoints]
+            neighbors_device (torch.Tensor): Linearize neighbors of all points in the given direction. TODO: actually implement different neighbors per direction. Has dimensions [sum(n_neighbors_device)]
+            n_neighbors_device (torch.Tensor): Number of neighbors per point in the given direction. SAME TODO. Has dimensions [parameters.npoints]
+            cum_n_neighbors_device (torch.Tensor): Cumulative number of neighbors per point (starts at 0). SAME TODO. Has dimensions [parameters.npoints]
+
+        Raises:
+            TypeError: _description_
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Next point indices, accumulated distance to the next points. Both torch.Tensors have dimensions [NPOINTS]
+        """
         match self.geometryType.get():
             case GeometryType.General3D:
                 return self.get_next_3D_geometry(origin_coords, raydirection, curr_points_index, distance_travelled, device, positions_device, neighbors_device, n_neighbors_device, cum_n_neighbors_device)
@@ -198,7 +218,8 @@ class Geometry:
         radii_device = positions_device[:,0]
         radii_in = radii_device[innerneighbors]
         Rcos : torch.Tensor = torch.sum(-origin_coords * raydirection, dim=1)
-        Rsin : torch.Tensor = torch.sqrt(torch.sum(origin_coords**2, dim=1) - Rcos**2)
+        Rsin : torch.Tensor = torch.sqrt(torch.sum(origin_coords**2, dim=1) - Rcos**2 + min_dist)#sqrt of 0 is not differentiable
+        # print("RSIN", Rsin)
         ray_intersects_inner : torch.Tensor = radii_in > Rsin
         ray_travelled_past_half: torch.Tensor = distance_travelled >= Rcos
 
@@ -211,13 +232,15 @@ class Geometry:
         #finally compute the distances for the new indices
         radii_next = torch.gather(radii_device, 0, next_index)
         mask_ray_intersects_shell : torch.Tensor = (radii_next > Rsin).type(Types.GeometryInfo)
-        delta_dist = torch.sqrt((radii_next**2-Rsin**2)*mask_ray_intersects_shell)#distance between intersections
+        delta_dist = torch.sqrt((radii_next**2-Rsin**2)*mask_ray_intersects_shell + min_dist)#distance between intersections
+        #sqrt of 0 is not differentiable, so +min_dist required to allow gradient computation
+        # print("delta dist", delta_dist)
         next_distance = Rcos + (1-2*in_criterion) * delta_dist
 
         return next_index, next_distance
     
     def get_doppler_shift(self, curr_point: torch.Tensor, origin_position:torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, distance_travelled: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
-        """Computes the doppler shift for arbitrary geometries by assuming non-relativistic velocities.
+        """Computes the doppler shift for arbitrary geometries by assuming non-relativistic velocities. 
 
         Args:
             curr_point (torch.Tensor): Indices of the points for which we want to compute the doppler shift. Has dimensions [NPOINTS]
@@ -228,10 +251,10 @@ class Geometry:
             device (torch.device, optional): Device on which to compute. Defaults to torch.device("cpu").
 
         Raises:
-            TypeError: Is the geometry type has not yet been implemented.
+            TypeError: If the geometry type has not yet been implemented.
 
         Returns:
-            torch.Tensor: The doppler shift. Has dimensions [NPOINTS]
+            torch.Tensor: The doppler shift factor for shifting from the origin frame to the comoving frame. Multiply with the origin frequency to compare versus line comoving frequencies. Has dimensions [NPOINTS]
         """
         curr_velocity_device = self.points.velocity.get(device)[curr_point]
         match self.geometryType.get():
@@ -254,7 +277,7 @@ class Geometry:
         Returns:
             torch.Tensor: The doppler shift. Has dimension [NPOINTS]
         """
-        return 1.0 - torch.sum((current_velocity-origin_velocity)*raydir, dim=1)/c.value#type: ignore
+        return 1.0 + torch.sum((current_velocity-origin_velocity)*raydir, dim=1)/c.value#type: ignore
         
     def get_doppler_shift_1D_spherical_symmetry(self, current_velocity: torch.Tensor, origin_position: torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, curr_radius: torch.Tensor, distance_travelled: torch.Tensor) -> torch.Tensor:
         """Returns the doppler shift factor for a 1D spherically symmetric geometry by assuming non-relativistic velocities
@@ -272,9 +295,8 @@ class Geometry:
         """
         distance_to_origin = torch.sum(-origin_position*raydir, dim=1) #dims: [NPOINTS]
         distance_diff = distance_travelled - distance_to_origin #dims: [NPOINTS]
-        torch.set_printoptions(10)
-        print("fraction should be below 1", distance_diff/curr_radius, distance_diff, distance_to_origin)#debug
+        # print("fraction should be below 1", distance_diff/curr_radius, distance_diff, distance_to_origin)#debug
         # Note: projected velocity of the shell onto the ray is = distance_diff/radius * current_velocity.
-        print("curr part", current_velocity * distance_diff / curr_radius, "origin part", torch.sum(origin_velocity * raydir, dim = 1), origin_velocity)
-        return 1.0 - (current_velocity * distance_diff / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
+        # print("curr part", current_velocity * distance_diff / curr_radius, "origin part", torch.sum(origin_velocity * raydir, dim = 1), origin_velocity)
+        return 1.0 + (current_velocity * distance_diff / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
             
