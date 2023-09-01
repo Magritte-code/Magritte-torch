@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from magrittetorch.utils.storagetypes import DataCollection, StorageTensor, StorageNdarray
 from magrittetorch.model.parameters import Parameter
-from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable
+from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable, Collection, MutableSet
 
 # TODO: complete docs
 
@@ -29,6 +29,7 @@ class IO:
         file = h5py.File(self.save_location, 'r')
         parameter : Parameter[Any]
         if legacy_mode:#in legacy mode, data can be saved at different locations
+            try_read_again_parameters: MutableSet[Parameter[Any]] = set()
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.legacy_name)
             #read all delayed lists; Dev Note: the storedData list might get appended during reading the delayedLists
@@ -37,7 +38,12 @@ class IO:
                 #now read all local parameters, as they might have been constructed within a delayed list
                 for localParameter in dataCollection.localParameters:
                     #TODO: reading every local parameter again is inefficient; keep track of currently read parameter/not yet read parameters
-                    self.read_parameter(file, localParameter, localParameter.legacy_name, localParameter.legacy_conversion_function)
+                    try:
+                        print(localParameter, localParameter.legacy_name)
+                        self.read_parameter(file, localParameter, localParameter.legacy_name, localParameter.legacy_conversion_function)
+                    except Exception as e:
+                        print(e)
+                        try_read_again_parameters.add(localParameter)
             for datapiece in dataCollection.storedData:
                 if type(datapiece) is StorageTensor:
                     legacy_data_torch = self.read_torch(file, datapiece.legacy_relative_storage_location)
@@ -50,6 +56,9 @@ class IO:
                     datapiece.set(legacy_data_numpy)
                 else: 
                     raise TypeError("Data reading not yet implemented for " + str(type(datapiece)))
+            #some local parameters might need more data in order to be correctly set
+            for localParameter in try_read_again_parameters:
+                self.read_parameter(file, localParameter, localParameter.legacy_name, localParameter.legacy_conversion_function)
             for inferredDatapiece in dataCollection.inferredData:
                 if inferredDatapiece.legacy_relative_storage_location is not None:
                     try:
@@ -209,9 +218,26 @@ class LegacyHelper:
     """
     @staticmethod
     def read_length_of_group(search: str, h5pygroup: h5py.Group) -> int:
+        """Reads the length of a h5py Group
+
+        Args:
+            search (str): common name of the group
+            h5pygroup (h5py.Group): h5py Group to search within
+
+        Returns:
+            int: length of the group
+        """
         return len([1 for key in h5pygroup.keys() if search in key])
 
     @staticmethod
     def read_length_of_dataset(h5pydataset: h5py.Dataset) -> int:
+        """Reads the length of a h5py Dataset
+
+        Args:
+            h5pydataset (h5py.Dataset): Dataset to read
+
+        Returns:
+            int: Length of the h5py.Dataset
+        """
         return len(h5pydataset)
 

@@ -461,6 +461,11 @@ class DelayedListOfClassInstances(Generic[T]):
         """
         self.list = [self.class_init_function(i) for i in range(self.length_param.get())]
 
+    def get(self) -> List[T]:
+        if self.list is None:
+            raise ValueError("Not yet set TODO: better error message")
+        return self.list
+
     def __getitem__(self, i : int) -> T:
         """Return the element at the specified index
 
@@ -576,6 +581,7 @@ class DataCollection():
         Args:
             local_parameter (Parameter[Any]): _description_
         """
+        print(local_parameter.legacy_name)
         self.localParameters.append(local_parameter)
 
 

@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List, Union, Dict, Tuple
 from magrittetorch.model.geometry.points import Points
-from magrittetorch.model.geometry.boundary import Boundary
+from magrittetorch.model.geometry.boundary import Boundary, BoundaryType 
 from magrittetorch.model.geometry.rays import Rays
 from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.storagetypes import DataCollection, Types
@@ -27,8 +27,8 @@ class Geometry:
     def __init__(self, params: Parameters, dataCollection: DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.points: Points = Points(params, self.dataCollection)
         self.boundary: Boundary = Boundary(params, self.dataCollection)
+        self.points: Points = Points(params, self.dataCollection)
         self.rays: Rays = Rays(params, self.dataCollection)
         self.geometryType: Parameter[GeometryType] = Parameter("geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType)); self.dataCollection.add_local_parameter(self.geometryType)
 
@@ -42,24 +42,19 @@ class Geometry:
             case _:
                 raise KeyError("Something went wrong with setting the model geometry")
     
-    # def map_data_to_device(self) -> None:
-    #     self.points.map_data_to_device()
-    
-    def distance_in_direction_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, points_position : torch.Tensor, distance_travelled : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def distance_in_direction_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, points_position : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes the distances to the shells in a 3D setting
 
         Args:
             origin_coords (torch.Tensor): Coordinates of the origin of the rays
             raydirection (torch.Tensor): Direction of the rays
             points_idx (torch.Tensor): Point indices of the points in the 3D geometry
-            distance_travelled (torch.Tensor): NOT USED. Neccesary for having the same argument list as Geometry.distance_in_direction_1D_spherical_symmetry.
 
         Returns:
             torch.Tensor: Distance travelled on the rays to reach the given points, with respect to the origin_coords and the raydirection.
             torch.Tensor: Perpendicular distance of the rays to the points
         """
         distance_on_ray : torch.Tensor = torch.sum((points_position-origin_coords) * raydirection, dim = 1)
-
         total_distance2 : torch.Tensor = torch.sum((points_position-origin_coords)**2, dim = 1)
         return distance_on_ray, torch.sqrt(total_distance2-distance_on_ray**2)
     
@@ -115,72 +110,71 @@ class Geometry:
         """Returns the next set of points on the ray, given the current points and ray direction.
 
         Args:
-            origin_coords (torch.Tensor): Coordinates of the origin points. Has dimensions [NPOINTS, 3]
+            origin_coords (torch.Tensor): 3D Coordinates of the origin points. Has dimensions [NPOINTS, 3]
             raydirection (torch.Tensor): Ray direction. Has dimensions [3]
             curr_points_index (torch.Tensor): Current point indices. Has dimensions [NPOINTS]
             distance_travelled (torch.Tensor): Current travelled distance. Has dimensions [NPOINTS]
             device (torch.device): Device on which to compute.
-            positions_device (torch.Tensor): Positions of all points in the model. TODO: get in this function. Has dimensions [parameters.npoints]
-            neighbors_device (torch.Tensor): Linearize neighbors of all points in the given direction. TODO: actually implement different neighbors per direction. Has dimensions [sum(n_neighbors_device)]
-            n_neighbors_device (torch.Tensor): Number of neighbors per point in the given direction. SAME TODO. Has dimensions [parameters.npoints]
-            cum_n_neighbors_device (torch.Tensor): Cumulative number of neighbors per point (starts at 0). SAME TODO. Has dimensions [parameters.npoints]
+            positions_device (torch.Tensor): Positions of all points in the model. Has dimensions [parameters.npoints]. TODO: get in this function, reduce number of function arguments.
+            neighbors_device (torch.Tensor): Linearized neighbors of all points in the given direction. Has dimensions [sum(n_neighbors_device)]
+            n_neighbors_device (torch.Tensor): Number of neighbors per point in the given direction. Has dimensions [parameters.npoints]
+            cum_n_neighbors_device (torch.Tensor): Cumulative number of neighbors per point in the given direction (starts at 0). Has dimensions [parameters.npoints]
 
         Raises:
-            TypeError: _description_
+            NotImplementedError: If get_next has not yet been implemented for the geometryType.
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Next point indices, accumulated distance to the next points. Both torch.Tensors have dimensions [NPOINTS]
         """
         match self.geometryType.get():
             case GeometryType.General3D:
-                return self.get_next_3D_geometry(origin_coords, raydirection, curr_points_index, distance_travelled, device, positions_device, neighbors_device, n_neighbors_device, cum_n_neighbors_device)
+                return self.get_next_3D_geometry(origin_coords, raydirection, curr_points_index, device, positions_device, neighbors_device, n_neighbors_device, cum_n_neighbors_device)
             case GeometryType.SpericallySymmetric1D:
                 return self.get_next_1D_spherical_symmetry(origin_coords, raydirection, curr_points_index, distance_travelled, device, positions_device)
             case _:
-                raise TypeError("Geometry type not yet supported: ", self.geometryType)
+                raise NotImplementedError("Geometry type not yet supported: ", self.geometryType)
 
 
-    def get_next_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, distance_travelled: torch.Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # positions_device = self.points.position.get().to(device=device)
-        # neighbors_device = self.points.neighbors.get().to(device=device)
-        # n_neighbors_device = self.points.n_neighbors.get().to(device=device)
-        # cum_n_neighbors_device = self.points.get_cum_n_neighbors().to(device=device)
+    def get_next_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns the next point on the ray in a general 3D geometry, given the raydirection.
+
+        Args:
+            origin_coords (torch.Tensor): 3D Coordinates of the origin points. Has dimensions [NPOINTS, 3]
+            raydirection (torch.Tensor): Ray direction. Has dimensions [3]
+            curr_points_index (torch.Tensor): Current point indices. Has dimensions [NPOINTS]
+            device (torch.device): Device on which to compute.
+            positions_device (torch.Tensor): Positions of all points in the model. Has dimensions [parameters.npoints]. TODO: get in this function, reduce number of function arguments.
+            neighbors_device (torch.Tensor): Linearized neighbors of all points in the given direction. Has dimensions [sum(n_neighbors_device)]
+            n_neighbors_device (torch.Tensor): Number of neighbors per point in the given direction. Has dimensions [parameters.npoints]
+            cum_n_neighbors_device (torch.Tensor): Cumulative number of neighbors per point in the given direction (starts at 0). Has dimensions [parameters.npoints]
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Next point indices, accumulated distance to the next points. Both torch.Tensors have dimensions [NPOINTS]
+        """
         masked_n_neighbors = n_neighbors_device[curr_points_index]
-        input_size =origin_coords.size(dim=0)
+        input_size = origin_coords.size(dim=0)
 
-        # indices_to_check = multi_arange(torch.gather(cum_n_neighbors_device, 0, curr_points_index), torch.gather(n_neighbors_device, 0, curr_points_index), device)
+        #obtain which (indices of) neighbors to check in the linearized neighbors list 
         indices_to_check = multi_arange(cum_n_neighbors_device[curr_points_index], n_neighbors_device[curr_points_index], device)
-        # lengthened_curr_ids = torch.repeat_interleave(curr_points_index, masked_n_neighbors)
-        # lengthened_origin_coords = torch.repeat_interleave(origin_coords, masked_n_neighbors, dim=0)
-        # lengthened_distance_travelled = torch.repeat_interleave(distance_travelled, masked_n_neighbors)
-        
+        #duplicate index of curr_points_index correspondingly
         lengthening_indices = torch.arange(masked_n_neighbors.size(dim=0), device=device).repeat_interleave(masked_n_neighbors)
-        lengthened_curr_ids = curr_points_index[lengthening_indices]
         lengthened_origin_coords = origin_coords[lengthening_indices, :]
-        lengthened_distance_travelled = distance_travelled[lengthening_indices]
 
         neighbors_to_check = torch.gather(neighbors_device, 0, indices_to_check)
 
-        #Get distances and compare with distance of current point; note: some computation might be wasted
-        xdistance, ydistance = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[neighbors_to_check], lengthened_distance_travelled)
-        currdistance, _ = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[lengthened_curr_ids], lengthened_distance_travelled)
+        #Get distances and compare with distance of current point; TODO: maybe use squared distance instead for ydist
+        xdistance, ydistance = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[neighbors_to_check])
 
-        wrongdirection = xdistance <= currdistance
-        #add penalty to points in wrong direction, making sure that it is never the correct point;
-        #note: penalty 1 plus max value to make sure that these penalized values are higher than any original value
-        # ydistance += wrongdirection.type(Types.GeometryInfo) * (1.0 + torch.max(ydistance, 0)[0])
-        ydistance += wrongdirection * (1.0 + torch.max(ydistance, 0)[0])
-
-        scatter_ids = torch.repeat_interleave(torch.arange(input_size, device=device).type(torch.int64), masked_n_neighbors)
-
+        #Figure out the indices of the closest points
         tempstuff = torch.zeros(input_size, device=device, dtype=Types.GeometryInfo)
-        minydists_per_point = tempstuff.scatter_reduce(0, scatter_ids, ydistance, reduce="amin", include_self=False)#TODO: technically, we can reuse x dist at this point
+        minydists_per_point = tempstuff.scatter_reduce(0, lengthening_indices, ydistance, reduce="amin", include_self=False)#TODO: technically, we can reuse x dist at this point
         #broadcast these minimal distances once more, using gather
-        minydists = minydists_per_point.gather(0, scatter_ids)
+        minydists = minydists_per_point.gather(0, lengthening_indices)
         minindices = torch.nonzero(minydists == ydistance).flatten()#torch.nonzero likes to transpose the matrix for some reason
-        corresp_scatter_ids = torch.gather(scatter_ids, 0, minindices)
+        corresp_scatter_ids = torch.gather(lengthening_indices, 0, minindices)
 
         #If equal distances would arise, the resulting dimension would be wrong. Thus I only use the first of each scatter (corresponding to the curr_points_indices)
+        #TODO: figure out cheaper way to do this
         first_result_of_each_scatter = torch.searchsorted(corresp_scatter_ids, torch.arange(input_size, device=device).type(torch.int64))
         next_idx_of_neighbors_to_check = minindices[first_result_of_each_scatter]
 
@@ -190,8 +184,19 @@ class Geometry:
         return next_index, next_dist_travelled
 
     def get_next_1D_spherical_symmetry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, distance_travelled: torch.Tensor, device : torch.device, positions_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns the next shell on the ray given the raydirection and the currently travelled distance.
+
+        Args:
+            origin_coords (torch.Tensor): 3D Coordinates of the origin points. Has dimensions [NPOINTS, 3]
+            raydirection (torch.Tensor): Ray direction. Has dimensions [3]
+            curr_points_index (torch.Tensor): Current point indices. Has dimensions [NPOINTS]
+            device (torch.device): Device on which to compute.
+            positions_device (torch.Tensor): Positions of all points in the model. Has dimensions [parameters.npoints]. TODO: get in this function, reduce number of function arguments.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Next point indices, accumulated distance to the next points. Both torch.Tensors have dimensions [NPOINTS]
+        """
         #In 1D, use the geometry to your advantage for determining the ray tracing procedure
-        #dev note: add a variant for the 3D raytracing procedure, but not for this (headaches will ensue)
         #TODO: bench several minor variants of this algorithm (check whether precomputing the outerneighbors is wasted effort)
 
         #1D algorithm:
@@ -204,7 +209,7 @@ class Geometry:
         #  if yes: go outwards
         #  if no: stay on same index, but return post halfway distance
         #
-        #thus restructured
+        #thus restructured for less computations
         #
         #if prev intersect and before half -> go inwards
         #if post-halfway -> go outwards
@@ -218,8 +223,8 @@ class Geometry:
         radii_device = positions_device[:,0]
         radii_in = radii_device[innerneighbors]
         Rcos : torch.Tensor = torch.sum(-origin_coords * raydirection, dim=1)
-        Rsin : torch.Tensor = torch.sqrt(torch.sum(origin_coords**2, dim=1) - Rcos**2 + min_dist)#sqrt of 0 is not differentiable
-        # print("RSIN", Rsin)
+        Rsin : torch.Tensor = torch.sqrt(torch.sum(origin_coords**2, dim=1) - Rcos**2 + min_dist)
+        #sqrt of 0 is not differentiable, so +min_dist required to allow gradient computation
         ray_intersects_inner : torch.Tensor = radii_in > Rsin
         ray_travelled_past_half: torch.Tensor = distance_travelled >= Rcos
 
@@ -234,12 +239,11 @@ class Geometry:
         mask_ray_intersects_shell : torch.Tensor = (radii_next > Rsin).type(Types.GeometryInfo)
         delta_dist = torch.sqrt((radii_next**2-Rsin**2)*mask_ray_intersects_shell + min_dist)#distance between intersections
         #sqrt of 0 is not differentiable, so +min_dist required to allow gradient computation
-        # print("delta dist", delta_dist)
         next_distance = Rcos + (1-2*in_criterion) * delta_dist
 
         return next_index, next_distance
     
-    def get_doppler_shift(self, curr_point: torch.Tensor, origin_position:torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, distance_travelled: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+    def get_doppler_shift(self, curr_point: torch.Tensor, origin_position:torch.Tensor, origin_velocity: torch.Tensor, raydir: torch.Tensor, distance_travelled: torch.Tensor, device: torch.device) -> torch.Tensor:
         """Computes the doppler shift for arbitrary geometries by assuming non-relativistic velocities. 
 
         Args:
@@ -248,7 +252,7 @@ class Geometry:
             origin_velocity (torch.Tensor): 3D velocity of the origin of the ray. Has dimensions [NPOINTS, 3]
             raydir (torch.Tensor): Ray directions. Has dimensions [NPOINTS, 3]
             distance_travelled (torch.Tensor): Distance travelled by the ray. Is only used in spherically symmetric geometries. Has dimensions [NPOINTS]
-            device (torch.device, optional): Device on which to compute. Defaults to torch.device("cpu").
+            device (torch.device, optional): Device on which to compute.
 
         Raises:
             TypeError: If the geometry type has not yet been implemented.
@@ -295,8 +299,26 @@ class Geometry:
         """
         distance_to_origin = torch.sum(-origin_position*raydir, dim=1) #dims: [NPOINTS]
         distance_diff = distance_travelled - distance_to_origin #dims: [NPOINTS]
-        # print("fraction should be below 1", distance_diff/curr_radius, distance_diff, distance_to_origin)#debug
         # Note: projected velocity of the shell onto the ray is = distance_diff/radius * current_velocity.
-        # print("curr part", current_velocity * distance_diff / curr_radius, "origin part", torch.sum(origin_velocity * raydir, dim = 1), origin_velocity)
         return 1.0 + (current_velocity * distance_diff / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
             
+
+    def get_neighbors_in_direction(self, raydir: torch.Tensor, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Computes the subset of the neighbors which lie in the given direction. For 3D geometries, it excludes the neighbors in the wrong direction.
+        For 1D geometries, this returns the full neighbors, as no shells can be excluded only based on ray direction.
+
+        Args:
+            raydir (torch.Tensor): The ray direction. Has dimensions [3]
+            device (torch.device): The device on which to compute and store the torch.Tensors
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Linearized neighbors tensor in correct direction, corresponding number of neighbors per point and cumulative number of neighbors.
+            The tensors respectively have dimensions [sum(n_neighbors_in_correct_direction)], [parameters.npoints] and [parameters.npoints]
+        """
+        match self.geometryType.get():
+            case GeometryType.General3D:
+                return self.points.get_neighbors_in_direction_3D_geometry(raydir, device)
+            case GeometryType.SpericallySymmetric1D:
+                return self.points.neighbors.get(device), self.points.n_neighbors.get(device), self.points.get_cum_n_neighbors(device)
+            case _:
+                raise TypeError("Geometry type not yet supported: ", self.geometryType)

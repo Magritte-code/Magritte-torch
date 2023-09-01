@@ -34,6 +34,16 @@ class MemoryManager:
 
 
     def generate_splits(self, max_Nindices : int, max_memory: int, expected_memory_usage : int) -> List[torch.Tensor]:
+        """Generates splits based on expected and allowed memory usage
+
+        Args:
+            max_Nindices (int): Number of indices to distribute
+            max_memory (int): Maximum allowed memory usage
+            expected_memory_usage (int): Expected memory usage
+
+        Returns:
+            List[torch.Tensor]: List of torch.Tensors containing the allowed indices per split
+        """
         Nsplits : int = (expected_memory_usage + max_memory - 1) // max_memory
         max_indices_per_split : int = (max_Nindices + Nsplits - 1) // Nsplits
         return torch.split(torch.arange(max_Nindices), [max_indices_per_split])

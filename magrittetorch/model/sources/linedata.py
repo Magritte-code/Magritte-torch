@@ -19,7 +19,6 @@ class Linedata:
         storagedir : str = "lines/lineProducingSpecies_"+str(lineproducingspeciesidx)+"/linedata/"#TODO: is legacy io for now; figure out how to switch to new structure
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        # self.num : StorageNdarray(Types.IndexInfo, [1], units.dimensionless_unscaled, storagedir+".num") = i
         #set local parameters
         self.num: Parameter[int] = Parameter[int](storagedir+"num"); self.dataCollection.add_local_parameter(self.num) #index of species in list
         self.sym: Parameter[str] = Parameter[str](storagedir+"sym"); self.dataCollection.add_local_parameter(self.sym) #symbol of species
@@ -28,7 +27,6 @@ class Linedata:
         self.ncolpar: Parameter[int] = Parameter[int](storagedir+"ncolpar", legacy_converter=(storagedir, lambda x: LegacyHelper.read_length_of_group("collisionPartner_", x))); self.dataCollection.add_local_parameter(self.ncolpar)
         self.inverse_mass: Parameter[float] = Parameter[float](storagedir+"inverse_mass"); self.dataCollection.add_local_parameter(self.inverse_mass) # inverse mass of species (in 1/atomic mass units)
         #hmm, not sure where inverse mass belongs to; either parameter (stored in an attribute) or in storagetensor (as it is data we actually use; but dimension/unit checking will not be used)
-        # self.inverse_mass: StorageTensor = StorageTensor(Types.GeometryInfo, [1], units.dimensionless_unscaled, storagedir+"inverse_mass", read_from_attribute = True); self.dataCollection.add_data(self.inverse_mass, "inverse mass_"+str(lineproducingspeciesidx)) #1/species mass (in atomic mass unit)
         #set delayed list
         self.colpar: DelayedListOfClassInstances[CollisionPartner] = DelayedListOfClassInstances[CollisionPartner](self.ncolpar, lambda j: CollisionPartner(self.parameters, self.dataCollection, lineproducingspeciesidx, j), "collisionPartner"); self.dataCollection.add_delayed_list(self.colpar)
         #all stored data

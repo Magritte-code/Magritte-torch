@@ -15,6 +15,11 @@ class Rays:
         self.antipod: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.nrays], units.dimensionless_unscaled, self._infer_antipod); self.dataCollection.add_inferred_dataset(self.antipod, "ray antipod") # Index of antipod
 
     def _infer_antipod(self) -> torch.Tensor:
+        """Infers the antipodal ray indices, assuming that all ray directions have antipods
+
+        Returns:
+            torch.Tensor: The antipodal ray indices. Has dimensions [parameters.nrays]
+        """
         nrays : int = self.parameters.nrays.get()
         direction_tensor = self.direction.get()
         distances = torch.sum(torch.abs(direction_tensor.reshape(nrays, 3, 1) + direction_tensor.T.reshape(1,3,nrays)), dim=1)#L1 norm for simplicity of implementation

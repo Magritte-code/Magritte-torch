@@ -13,7 +13,6 @@ class Turbulence:
         self.dataCollection : DataCollection = dataCollection
         self.vturb: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints], units.m/units.s, storagedir+"vturb", legacy_converter = (storagedir+"vturb2", self.__legacy_vturb2_to_v)); self.dataCollection.add_data(self.vturb, "vturb") 
         self.vturb2_norm: InferredTensor = InferredTensor(Types.GeometryInfo, [self.parameters.npoints], units.dimensionless_unscaled, self.__infer_vturb2_norm); self.dataCollection.add_inferred_dataset(self.vturb2_norm, "vturb2 normalized")
-        #python : stores vturb; legacy stores and python infers: (vturb/c)**2
 
     def __legacy_vturb2_to_v(self, vturb2: torch.Tensor) -> torch.Tensor:
         return torch.sqrt(vturb2)*astropy.constants.c.value#type: ignore #as of writing: astropy has only partially implemented type hints

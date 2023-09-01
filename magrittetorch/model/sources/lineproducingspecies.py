@@ -9,9 +9,7 @@ import astropy.constants
 from magrittetorch.model.sources.linedata import Linedata
 import numpy as np
 
-
 #TODO: implement in seperate file
-
 #plan to implement
 class ApproxLambda:
     pass
@@ -69,7 +67,6 @@ class LineProducingSpecies:
         device_irad = self.linedata.irad.get()
         return  astropy.constants.h.value / (4.0 * np.pi) * device_pops[:, device_irad] * device_einstein_A.reshape(1,-1)#type: ignore
         
-    
     def get_line_opacities_emissivities(self, device : torch.device=torch.device("cpu")) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the line opacities and emissivities for this species
 
@@ -87,11 +84,6 @@ class LineProducingSpecies:
         device_jrad = self.linedata.jrad.get(device)
         return  (astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)),
                  astropy.constants.h.value / (4.0 * np.pi) * device_pops[:, device_irad] * device_einstein_A.reshape(1,-1))
-        #output format: ([parameters.npoints, linedata.nrad])
-
-    
-    # def get_line_quadrature_frequencies(self, device: torch.device = torch.device("cpu")) -> torch.Tensor:
-    #     return self.linedata.frequency.get().to(device)
 
     def get_relative_line_width(self, device: torch.device = torch.device("cpu")) -> torch.Tensor:
         """Computes the relative line width per point, using thermodynamics data
@@ -117,11 +109,6 @@ class LineProducingSpecies:
         """
         return self.linedata.frequency.get(device)[None, :]*self.get_relative_line_width(device)[:, None]
 
-        # return self.linedata.frequency.get(device).reshape(1,-1)*torch.sqrt(self.linedata.inverse_mass.get()
-        #        * (astropy.constants.k_B*2.0/astropy.constants.c**2/astropy.constants.u).value*self.dataCollection.get_data("gas temperature").get(device).reshape(-1,1)#type: ignore
-        #          + self.dataCollection.get_inferred_dataset("vturb2 normalized").get(device).reshape(-1,1))
-        #output format ([parameters.npoints, linedata.nrad])
-        
     def get_line_frequencies(self, device: torch.device = torch.device("cpu")) ->torch.Tensor:
         """Computes all frequencies necessary to compute NLTE radiative transfer
 
@@ -129,10 +116,10 @@ class LineProducingSpecies:
             device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
 
         Returns:
-            torch.Tensor: 2D torch.Tensor contain all relevant frequencies per point. Tensor has dimensions [parameters.npoints, linedata.rad*linequadrature.nquads]
+            torch.Tensor: 2D torch.Tensor contain all relevant frequencies per point. Tensor has dimensions [parameters.npoints, linedata.nrad*linequadrature.nquads]
         """
         linewidths_device = self.get_line_widths(device)
-        #point, line, quadidx
+        #dims: [parameters.npoints, linedata.nrad, linequadrature.nquads]
         temp = self.linedata.frequency.get(device)[None, :, None] + self.linequadrature.roots.get(device)[None, None, :] * linewidths_device[:,:, None]
         return temp.flatten(start_dim=1)
 
@@ -156,16 +143,34 @@ class LineProducingSpecies:
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Tensors of respectively the minimum and maximum relevant lines for evaluating opacities/emissivities. Both torch.Tensors have dimensions [parameters.npoints, NFREQS]
         """
-        # linefreqs_device = self.linedata.frequency.get().to(device)
-        # linewidths_device = self.get_line_widths(device) also subset to actual point indices [corresponding_point_indices, :]
         min_bound_linefreqs = sorted_linefreqs_device[None, :] - MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
         max_bound_linefreqs = sorted_linefreqs_device[None, :] + MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
 
         lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False)
         upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies)
-        # print(lower_indices, upper_indices)
         return lower_indices, upper_indices
     
+    def get_global_bound_relevant_line_indices(self, opacity_compute_frequencies: torch.Tensor, max_shift:torch.Tensor,  device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Computes a global heuristic bound for which line(s) to use for which frequencies when computing opacities/emissivities.
+
+        Args:
+            opacity_compute_frequencies (torch.Tensor): Given frequencies to use for the entire computation. Has dimensions [NFREQS]
+            max_shift (torch.Tensor): Maximum shift given by the doppler shift. Lies between 0 and 1 and has dimensions [1]
+            device (torch.device): Device on which to compute and return the result.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Tensors of respectively the minimum and maximum relevant lines for evaluating opacities/emissivities. Both torch.Tensors have dimensions [NFREQS]
+        """
+        #opacity_compute_freqs: dims [NFREQS]
+        max_relative_linewidth = torch.max(self.get_relative_line_width(device))
+        min_bound_linefreqs = self.sorted_linefreqs.get(device) * (1.0 - 10.0 * max_relative_linewidth - 2.0*max_shift)
+        max_bound_linefreqs = self.sorted_linefreqs.get(device) * (1.0 + 10.0 * max_relative_linewidth + 2.0*max_shift)
+
+        lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False)
+        upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies)
+        return lower_indices, upper_indices
+    
+    #DEPRECATED: use pre-evaluated line instead
     def evaluate_line_opacities_emissivities(self, frequencies: torch.Tensor, min_line_indices: torch.Tensor, max_line_indices: torch.Tensor, line_opacities: torch.Tensor, line_emissivities: torch.Tensor, sorted_linefreqs_device: torch.Tensor, sorted_linewidths_device: torch.Tensor, device: torch.device = torch.device("cpu")) -> Tuple[torch.Tensor, torch.Tensor]:
         """Evaluates the line opacities and emissivities using a heuristic method to determine which lines are relevant to the computation.
 
@@ -187,7 +192,6 @@ class LineProducingSpecies:
         Npoints, Nfreqs = frequencies.size(dim=0), frequencies.size(dim=1)
         delta_indices_flat = (max_line_indices - min_line_indices).flatten() #dimensions = [N_LINE_EVALS = sum(delta_indices)]
         extended_line_indices = multi_arange(min_line_indices.flatten(), delta_indices_flat, device) #dimensions = [N_LINE_EVALS = sum(delta_indices)]
-        # extended_frequencies = torch.repeat_interleave(frequencies.flatten(), delta_indices_flat) #dimensions = [N_LINE_EVALS]
         scatter_indices = torch.arange(Nfreqs*Npoints, device=device).repeat_interleave(delta_indices_flat) #dimensions = [N_LINE_EVALS]
         extended_frequencies = frequencies.flatten()[scatter_indices] #dimensions = [N_LINE_EVALS]
         #Now, we evaluate the line profile function
@@ -216,7 +220,6 @@ class LineProducingSpecies:
             Tuple[torch.Tensor, torch.Tensor]: Computed line opacities and emissivities. Both torch.Tensors have dimensions [NPOINTS, NFREQS]
         """
         #by summing over all lines, we can write a more simple computation. performance seems to favor this method prior to 5 lines and the other past 5 lines. TODO: bench on GPU instead
-        #dims: [npoints, nfreqs, self.linedata.nrad]
         inverse_line_widths = 1.0/sorted_linewidths_device
         #very narrow line profile
         line_profile_evaluation = sorted_linefreqs_device[None, None, :]*inverse_line_widths[:, None, :]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, None, :]*(sorted_linefreqs_device[None, None, :]-frequencies[:, :, None]), 2))
@@ -224,7 +227,27 @@ class LineProducingSpecies:
         line_emissivities = torch.sum(line_profile_evaluation*line_emissivities[:, None, :], dim=2)
         return line_opacities, line_emissivities
     
+    def evaluate_line_opacities_emissivites_single_line(self, frequencies: torch.Tensor, line_index: torch.Tensor, line_opacities: torch.Tensor, line_emissivities: torch.Tensor, sorted_linefreqs_device: torch.Tensor, sorted_linewidths_device: torch.Tensor, device: torch.device = torch.device("cpu")) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Evaluates the line opacities and emissivites by bruteforce summing contributions from all lines.
 
+        Args:
+            frequencies (torch.Tensor): Frequencies at which to evaluate the line opacity/emmissivity. Has dimensions [NPOINTS, NFREQS]
+            line_index (torch.Tensor): Index of the line to evaluate. Has dimensions [NFREQS]
+            line_opacities (torch.Tensor): Integrated line opacities. Has dimensions [NPOINTS, NFREQS]
+            line_emissivities (torch.Tensor): Integrated line emissivities. Has dimensions [NPOINTS, NFREQS]
+            sorted_linefreqs_device (torch.Tensor): Sorted line frequencies. Has dimensions [self.linedata.nrad]
+            sorted_linewidths_device (torch.Tensor): Sorted line widths. Has dimensions [NPOINTS, self.linedata.nrad]
+            device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Computed line opacities and emissivities. Both torch.Tensors have dimensions [NPOINTS, NFREQS]
+        """
+        inverse_line_widths = 1.0/sorted_linewidths_device
+        #very narrow line profile
+        line_profile_evaluation = sorted_linefreqs_device[None, line_index]*inverse_line_widths[:, line_index]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, line_index]*(sorted_linefreqs_device[None, line_index]-frequencies), 2))
+        line_opacities = line_profile_evaluation*line_opacities
+        line_emissivities = line_profile_evaluation*line_emissivities
+        return line_opacities, line_emissivities
 
 
 

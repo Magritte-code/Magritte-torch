@@ -15,5 +15,3 @@ class Thermodynamics:
         self.dataCollection : DataCollection = dataCollection
         self.temperature : Temperature = Temperature(self.parameters, self.dataCollection)
         self.turbulence : Turbulence = Turbulence(self.parameters, self.dataCollection)
-
-    #TODO: add line profile functions here ? Or in torch_algorithms

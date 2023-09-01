@@ -16,6 +16,8 @@ class Parameter(Generic[T]):
         if legacy_converter is not None:
             self.legacy_name = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
+            print(self.legacy_conversion_function, self.legacy_name)
+        print(self.legacy_name, self.legacy_conversion_function)
         self.value : Optional[T] = None
     
     def __str__(self) -> str:
@@ -47,6 +49,14 @@ class Parameter(Generic[T]):
             raise ValueError("The value for parameter " + self.name + " has already been set at: " + str(self.value) + ". Attempted to set at new value: " + str(value))
     
     def get(self) -> T:
+        """Returns the value of the parameter
+
+        Raises:
+            ValueError: If the parameter has not yet been set
+
+        Returns:
+            T: The value of the parameter
+        """
         if self.value is None:
             raise ValueError("The value for parameter " + self.name + " has not yet been set.")
         else:
@@ -76,14 +86,3 @@ class Parameters:
         for attr in dir(self):
             if not attr.startswith("__"):#no builtin attributes, nor __iter__ itself
                 yield self.__getattribute__(attr)
-
-    
-
-
-
-    #TODO: first create IO class to handle IO ops
-    #TODO: do we actually need to read and write these; only for compatibility reasons with C++ magritte
-    # def read(self, file_name : str) -> None:
-    #     pass
-    # def write(self, file_name : str) -> None:
-    #     pass
