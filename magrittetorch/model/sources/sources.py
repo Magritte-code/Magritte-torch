@@ -45,6 +45,26 @@ class Sources:
         return self.lines.get_sum_line_optical_depths(point_indices, frequencies, prev_frequencies, distances, curr_shift, prev_shift, curr_opacity, prev_opacity, device)
     
     def get_total_optical_depth_freqhelper(self, point_indices: torch.Tensor, prev_point_indices: torch.Tensor, original_point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, distances: torch.Tensor, curr_shift: torch.Tensor, prev_shift: torch.Tensor, curr_opacity: torch.Tensor, prev_opacity: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+        """
+        Computes the total optical depth in an interval by adding all sources. Currently, only line contributions are implemented.
+
+        Args:
+            curr_point_indices (torch.Tensor): Indices of the current points in the model. Has dimensions [NPOINTS]
+            prev_point_indices (torch.Tensor): Indices of the previous points in the model. Has dimensions [NPOINTS]
+            original_point_indices (torch.Tensor): Indicies of the starting points in the model. Has dimensions [NPOINTS]
+            freqhelper (FrequencyEvalHelper): FrequencyEvalHelper object
+            curr_shift (torch.Tensor): Doppler shift at the current point. Has dimensions [NPOINTS]
+            prev_shift (torch.Tensor): Doppler shift at the next point. Has dimensions [NPOINTS]
+            curr_opacity (torch.Tensor): Opacity at the current point. Has dimensions [NPOINTS, NFREQS]
+            prev_opacity (torch.Tensor): Opacity at the previous point. Has dimensions [NPOINTS, NFREQS]
+            distance_increments (torch.Tensor): Distance increment. Has dimensions [NPOINTS]
+            device (torch.device): Device on which to compute
+
+        Returns:
+            torch.Tensor: Total optical depth for the segment. Has dimensions [NPOINTS, NFREQS]
+        """
+          
         #TODO: when adding continumm or scattering, add them here
+
         return self.lines.get_sum_total_optical_depth_using_freqhelper(point_indices, prev_point_indices, original_point_indices, freqhelper, curr_shift, prev_shift, curr_opacity, prev_opacity, distances, device)
         

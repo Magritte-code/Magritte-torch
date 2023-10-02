@@ -108,6 +108,34 @@ class Boundary:
                 incorrect_boundary = torch.sum((full_boundary_positions - self.center.get(device)[None, :]) * direction[None, :], dim=1)<=0
                 is_boundary_copy[self.boundary2point.get(device)[incorrect_boundary]] = False
                 return is_boundary_copy
+            case BoundaryType.AxisAlignedCube:
+                #For a 3D cube, we get min and max boundary points
+                positions_device = self.dataCollection.get_data("position").get(device)#type: ignore
+                is_boundary_copy = self.is_boundary_point.get(device).clone()
+                full_boundary_positions = positions_device[is_boundary_copy,:]
+                minpos, maxpos = torch.min(full_boundary_positions, dim=0).values, torch.max(full_boundary_positions, dim=0).values
+
+                #there might exist some better way to find the indices of each of the sides, but for now, this suffices
+                xbounds = torch.logical_or(full_boundary_positions[:,0] == minpos[0], full_boundary_positions[:,0] == maxpos[0])
+                ybounds = torch.logical_or(full_boundary_positions[:,1] == minpos[1], full_boundary_positions[:,1] == maxpos[1])
+                zbounds = torch.logical_or(full_boundary_positions[:,2] == minpos[2], full_boundary_positions[:,2] == maxpos[2])
+
+                # For every cardinal direction, we check which points may still be on the boundary     
+                # For lower dimensional models, we do not care about the directions in which the model width is 0 
+                correctfullbounds = torch.zeros(self.parameters.nboundary.get(), dtype=Types.Bool, device=device)
+                if (maxpos[0] - minpos[0] != 0.0):
+                    correctfullbounds = torch.logical_or(correctfullbounds, torch.logical_and(xbounds, (full_boundary_positions[:, 0]-self.center.get(device)[None, 0])*direction[0] >= 0.0))
+                if (maxpos[1] - minpos[1] != 0.0):
+                    correctfullbounds = torch.logical_or(correctfullbounds, torch.logical_and(ybounds, (full_boundary_positions[:, 1]-self.center.get(device)[None, 1])*direction[1] >= 0.0))
+                if (maxpos[2] - minpos[2] != 0.0):
+                    correctfullbounds = torch.logical_or(correctfullbounds, torch.logical_and(zbounds, (full_boundary_positions[:, 2]-self.center.get(device)[None, 2])*direction[2] >= 0.0))
+
+                incorrect_boundary = torch.logical_not(correctfullbounds)
+
+                # print("incorrect bound", incorrect_boundary, direction, full_boundary_positions)
+                is_boundary_copy[self.boundary2point.get(device)[incorrect_boundary]] = False
+
+                return is_boundary_copy
             case _:#TODO: implement for cube boundary
                 raise NotImplementedError("Not yet implemented for BoundaryType", self.boundaryType.get())
 

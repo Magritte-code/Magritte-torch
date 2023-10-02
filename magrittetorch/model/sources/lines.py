@@ -71,7 +71,7 @@ class Lines:
         # print("sum optical depth", sum_optical_depths)
         return sum_optical_depths
     
-    def get_sum_total_optical_depth_using_freqhelper(self, curr_point_indices: torch.Tensor, prev_point_indices: torch.Tensor, original_point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, curr_shift: torch.Tensor, prev_shift:torch.Tensor, curr_opacity: torch.Tensor, prev_opacity: torch.Tensor, distance_increments: torch.Tensor, device: torch.device):
+    def get_sum_total_optical_depth_using_freqhelper(self, curr_point_indices: torch.Tensor, prev_point_indices: torch.Tensor, original_point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, curr_shift: torch.Tensor, prev_shift:torch.Tensor, curr_opacity: torch.Tensor, prev_opacity: torch.Tensor, distance_increments: torch.Tensor, device: torch.device) -> torch.Tensor:
         """Computes the total line opacity and emissivity for a segment using a FrequencyEvalHelper for efficiently determining which lines need to be included in the calculation.
 
         Args:
@@ -87,7 +87,7 @@ class Lines:
             device (torch.device): Device on which to compute
 
         Returns:
-            _type_: Total optical depth for the segment. Has dimensions [NPOINTS, NFREQS]
+            torch.Tensor: Total optical depth for the segment. Has dimensions [NPOINTS, NFREQS]
         """
         nfreqs = curr_opacity.size(dim=1)
         npoints = curr_point_indices.size(dim=0)
@@ -122,7 +122,7 @@ class Lines:
             device (torch.device, optional): Device on which to compute and return the line frequencies. Defaults to torch.device("cpu").
 
         Returns:
-            torch.Tensor: All NLTE line frequencies. Has dimensions [parameters.npoints, self.get_total_number_line_frequencies()]
+            torch.Tensor: All NLTE line frequencies, ordered per line. Has dimensions [parameters.npoints, self.get_total_number_line_frequencies()]
         """
         line_frequencies = torch.empty((self.parameters.npoints.get(), self.get_total_number_line_frequencies()), dtype=Types.FrequencyInfo, device=device)
         start_freq_idx = 0
