@@ -172,7 +172,7 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
 
 
 def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch.Tensor:
-    NLTE_freqs = model.sources.lines.get_all_line_frequencies(device=device) #dims: [parameters.npoints, NFREQS]#TODO: move to function arguments
+    NLTE_freqs = model.sources.lines.get_all_line_frequencies(device=device) #dims: [parameters.npoints, NFREQS]#TODO: move to function arguments; err only for imaging, this should be an argument
     model_velocities = model.geometry.points.velocity.get(device) #dims: [parameters.npoints, 3]
     model_positions = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
     freqhelper = FrequencyEvalHelper(NLTE_freqs, model.sources.lines.lineProducingSpecies.get(), model_velocities, device)#TODO: should be result of called get_all_line_freqs

@@ -6,3 +6,6 @@ build/
 magrittetorch.egg-info/*
 *__pycache__*
 models/
+tests/models/*
+tests/results/*
+*.hdf5

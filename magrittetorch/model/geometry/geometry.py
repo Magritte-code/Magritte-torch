@@ -5,12 +5,13 @@ from magrittetorch.model.geometry.boundary import Boundary, BoundaryType
 from magrittetorch.model.geometry.rays import Rays
 from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.storagetypes import DataCollection, Types
-from magrittetorch.model.parameters import Parameter
+from magrittetorch.model.parameters import Parameter, EnumParameter
 from magrittetorch.algorithms.torch_algorithms import multi_arange
 from magrittetorch.utils.constants import min_dist
 from astropy.constants import c
 import torch
 
+#err, do we need these two enums?
 class Frame(Enum):
     CoMoving = 0
     Rest = 1
@@ -30,7 +31,7 @@ class Geometry:
         self.boundary: Boundary = Boundary(params, self.dataCollection)
         self.points: Points = Points(params, self.dataCollection)
         self.rays: Rays = Rays(params, self.dataCollection)
-        self.geometryType: Parameter[GeometryType] = Parameter("geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType)); self.dataCollection.add_local_parameter(self.geometryType)
+        self.geometryType: EnumParameter[GeometryType, type[GeometryType]] = EnumParameter(GeometryType, "geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType)); self.dataCollection.add_local_parameter(self.geometryType)
 
     def __legacy_convert_geometryType(self, is_spherically_symmetric: bool) -> GeometryType:
         print("is the model spherically symmetric", is_spherically_symmetric, type(is_spherically_symmetric))

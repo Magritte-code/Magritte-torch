@@ -2,8 +2,9 @@ import h5py # type: ignore
 import numpy as np
 import torch
 from magrittetorch.utils.storagetypes import DataCollection, StorageTensor, StorageNdarray
-from magrittetorch.model.parameters import Parameter
+from magrittetorch.model.parameters import Parameter, EnumParameter
 from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Callable, Collection, MutableSet
+from enum import Enum
 
 # TODO: complete docs
 
@@ -17,7 +18,7 @@ class IO:
         """
         self.save_location = save_location
 
-    def read(self, dataCollection : DataCollection, legacy_mode : bool = True) -> None:
+    def read(self, dataCollection : DataCollection, legacy_mode : bool = False) -> None:
         """Reads all stored values from a given DataCollection (stored in hdf5 format)
 
         Args:
@@ -72,12 +73,24 @@ class IO:
         else:#non-legacy mode reading
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.name)
+            for localParameter in dataCollection.localParameters:
+                print("reading", localParameter.name)
+                self.read_parameter(file, localParameter, localParameter.name)
             #read all delayed lists; Dev Note: the storedData list might get appended during reading the delayedLists
             for delayedlist in dataCollection.delayedLists:
                 delayedlist.construct()
-            #now read all local parameters, as they might have been constructed within a delayed list
-            for localParameter in dataCollection.localParameters:
-                self.read_parameter(file, localParameter, localParameter.name)
+                #now read all local parameters, as they might have been constructed within a delayed list
+                for localParameter in dataCollection.localParameters:
+                    #TODO: reading every local parameter again is inefficient; keep track of currently read parameter/not yet read parameters
+                    # try:
+                    print(localParameter, localParameter.name)
+                    self.read_parameter(file, localParameter, localParameter.name)
+                    # except Exception as e:
+                    #     print(e)
+                    #     try_read_again_parameters.add(localParameter)
+            # #now read all local parameters, as they might have been constructed within a delayed list
+            # for localParameter in dataCollection.localParameters:
+            #     self.read_parameter(file, localParameter, localParameter.name)
             for datapiece in dataCollection.storedData:
                 if type(datapiece) is StorageTensor:
                     datapiece.set(self.read_torch(file, datapiece.relative_storage_location))
@@ -105,7 +118,9 @@ class IO:
         if not dataCollection.is_data_complete():
             raise ValueError("Data set is not yet complete. Please fill in the missing data points")
         file = h5py.File(self.save_location, 'w')
+        print(file, self.save_location)
         for param in dataCollection.parameters:#type: ignore
+            print("writing", param)
             self.write_parameter(file, param, param.name)
         for datapiece in dataCollection.storedData:
             if type(datapiece) is StorageTensor:
@@ -114,6 +129,9 @@ class IO:
                 self.write_numpy(file, datapiece.relative_storage_location, datapiece.get())
             else: 
                 raise TypeError("Data writing not yet implemented for " + str(type(datapiece)))
+        for param in dataCollection.localParameters:#Err, the hdf5 directories might not exist before writing the other data
+            print("writing", param)
+            self.write_parameter(file, param, param.name)
         pass
 
     def read_numpy(self, file : h5py.File, dataset_name : str) -> np.ndarray[Any, Any]:
@@ -180,7 +198,9 @@ class IO:
             parameter (Parameter): The parameter to read
             legacy_conversion_function (Optional[Callable[[Any], T]]): Optionally adds a conversion function for the read data to determine the value of the parameter
         """
+        print("reading parameter at", parameter_path)
         if legacy_conversion_function is not None:
+            print("legacy read")
             try:
                 parameter.set(legacy_conversion_function(file[parameter_path]))#legacy conversion function will act directly on a dataset to infer the parameter value
             except KeyError:
@@ -189,10 +209,21 @@ class IO:
             try:
                 path : str; attribute : str 
                 #mypy doesnt allow for unpacking of strings, thus ignore the warnings
+                print("setting the", parameter)
                 path, attribute = parameter_path.rsplit("/", 1)#type: ignore
-                parameter.set(file[path].attrs[attribute])
+                if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
+                    parameter.set(parameter.get_enum_type()(file[path].attrs[attribute]))
+                else:
+                    parameter.set(file[path].attrs[attribute])
             except ValueError:#guard against not enough parameters to unpack
-                parameter.set(file.attrs[parameter_path])
+                if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
+                    parameter.set(parameter.get_enum_type()(file.attrs[parameter_path]))
+                else:
+                    print(type(parameter.value), "new val", file.attrs[parameter_path])
+                # parameter.set(file.attrs[parameter_path])
+                # print(type(parameter.get()))
+                    # print(type(parameter.value))
+
 
     def write_parameter(self, file : h5py.File, parameter : Parameter[Any], storage_path : str) -> None:
         """Writes a single parameter to the given hdf5 file
@@ -203,12 +234,28 @@ class IO:
             parameter (Parameter): The parameter to write
         """
         path : str; attribute : str 
+        print(storage_path)
         #mypy doesnt allow for unpacking of strings, thus ignore the warnings
         try:
             path, attribute = storage_path.rsplit("/", 1)#type: ignore
-            file[path].attrs[attribute] = parameter.get()
+            paramvalue = parameter.get()
+            # file[path].attrs[attribute] = parameter.get()
+            #convert enums to their values
+            if isinstance(parameter, EnumParameter):
+                # dt = h5py.enum_dtype(type(paramvalue))
+                file[path].attrs[attribute] = paramvalue.value
+            else:
+                file[path].attrs[attribute] = paramvalue
         except ValueError:#guard against not enough parameters to unpack
-            file.attrs[parameter.name] = parameter.get()
+            paramvalue = parameter.get()
+            # file[path].attrs[attribute] = parameter.get()
+            #convert enums to their values
+            if isinstance(paramvalue, Enum):
+                # dt = h5py.enum_dtype(type(paramvalue))
+                file.attrs[storage_path] = paramvalue.value
+            else:
+                file.attrs[storage_path] = paramvalue
+
 
 
     

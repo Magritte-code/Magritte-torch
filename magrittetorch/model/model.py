@@ -29,11 +29,11 @@ class Image:
     pass
 
 class Model:
-    def __init__(self, name : str) -> None:
+    def __init__(self, save_location: str) -> None:
         self.parameters: Parameters = Parameters()
         self.dataCollection = DataCollection(self.parameters)
-        self.name : str = name
-        self.io = IO(self.name)
+        # self.name : str = name
+        self.io = IO(save_location)
         self.geometry: Geometry = Geometry(self.parameters, self.dataCollection)
         self.chemistry: Chemistry = Chemistry(self.parameters, self.dataCollection)
         self.thermodynamics: Thermodynamics = Thermodynamics(self.parameters, self.dataCollection)
@@ -42,10 +42,11 @@ class Model:
         self.images: List[Image] = []
 
     def write(self) -> None:
+        print("writing")
         self.io.write(self.dataCollection)
 
-    def read(self) -> None:
-        self.io.read(self.dataCollection)
+    def read(self, legacy_mode: bool = False) -> None:
+        self.io.read(self.dataCollection, legacy_mode)
 
     def get_boundary_intensity(self, point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
         """Computes the boundary intensity for the given boundary points and frequencies
@@ -60,6 +61,10 @@ class Model:
         """
         #I need both frequency info (contained within sources) and boundary info, so this function goes in model
         return self.geometry.boundary.get_boundary_intensity(point_indices, freqhelper.original_frequencies[point_indices,:], device)
+
+    # def solve_long_characteristics_NLTE_to_astropy(self, device: torch.device) -> Quantity[J/units.m**2]:
+    #     solve_long_characteristics_NLTE(self, device).to_numpy(force=True)
+
 
 
     

@@ -10,5 +10,6 @@ min_optical_depth = 1e-100 # assumes 64 bit float for optical depth
 
 
 class astropy_const:
-    #Defining some constants with proper units
+    """This class contains some physical constants defined in Magritte, with proper astropy units
+    """
     Tcmb: Quantity[u.K] = 2.72548 * u.K #CMB temperature for background intensity

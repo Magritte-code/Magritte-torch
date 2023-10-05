@@ -17,5 +17,7 @@ class CollisionPartner:
         self.tmp: StorageTensor = StorageTensor(Types.GeometryInfo, [self.ntmp], units.K, storagedir+"tmp"); self.dataCollection.add_data(self.tmp, "collision temperature_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
         self.Ce: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Ce"); self.dataCollection.add_data(self.Ce, "Collisional excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
         self.Cd: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Cd"); self.dataCollection.add_data(self.Cd, "Collisional de-excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.num_col_partner: Parameter[int] = Parameter[int](storagedir+"num_col_partner"); self.dataCollection.add_local_parameter(self.num_col_partner)
+        self.orth_or_para_H2: Parameter[str] = Parameter[str](storagedir+"orth_or_para_H2"); self.dataCollection.add_local_parameter(self.orth_or_para_H2)
 
         

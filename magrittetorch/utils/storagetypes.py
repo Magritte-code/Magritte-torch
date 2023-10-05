@@ -587,11 +587,20 @@ class DataCollection():
 
     def is_data_complete(self) -> bool:
         """Checks whether every dataset in the collection is complete
+        and all parameters have been set.
 
         Returns:
             bool: Whether all datasets of this collection are complete
         """
         isComplete : bool = True
+        isCompleteParmeters: list[tuple[bool, str]] = [(param.value is not None, param.name) for param in self.parameters]
+        if (not all([bool for bool, __ in isCompleteParmeters])):
+            isComplete = False
+            print("Parameters are not yet initialized. Parameters which has not yet been set: ", [name for (cond, name) in isCompleteParmeters if not cond])
+        isCompleteLocalParmeters: list[tuple[bool, str]] = [(param.value is not None, param.name) for param in self.localParameters]
+        if (not all([bool for bool, __ in isCompleteLocalParmeters])):
+            isComplete = False
+            print("Parameters are not yet initialized. Parameters which has not yet been set: ", [name for (cond, name) in isCompleteLocalParmeters if not cond])
         isCompletelistDelayedLists : List[Tuple[bool, str]] = [(data.is_complete(), data.instance_name) for data in self.delayedLists]
         if (not all([bool for bool, __ in isCompletelistDelayedLists])):
             isComplete = False
@@ -632,7 +641,7 @@ class Types:
     LevelPopsInfo = torch.float64 #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
     #TODO: check if more accurate workaround can be added
     FrequencyInfo = torch.float64 #64 bit float; might work with 32 bit floats instead
-    Enum = torch.int64 #64 bit signed int # for enums
+    Enum = torch.int64 #64 bit signed int for enums, as the enum values themselves is not a native pytorch datatype
     Bool = torch.bool #boolean # for truth values
     NpString = np.dtype('S') #use null-terminated objects to store strings in hdf5; unicode is not supported
 

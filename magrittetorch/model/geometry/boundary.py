@@ -1,7 +1,7 @@
 #contains everything about the boundary of a model
 from enum import Enum
 from magrittetorch.utils.storagetypes import StorageTensor, Types, DataCollection, InferredTensor
-from magrittetorch.model.parameters import Parameters, Parameter
+from magrittetorch.model.parameters import Parameters, Parameter, EnumParameter
 from magrittetorch.utils.constants import astropy_const
 from typing import Union, Tuple
 import torch
@@ -33,8 +33,8 @@ class Boundary:
         self.boundary_temperature: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nboundary], units.K, storagedir+"boundary_temperature"); self.dataCollection.add_data(self.boundary_temperature, "boundary_temperature") # contains the CMB temperature corresponding to incoming photons
         self.point2boundary: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_point2boundary); self.dataCollection.add_inferred_dataset(self.point2boundary, "point2boundary") # maps point index \in[0, npoints-1] to boundary index \in[0, nboundary-1]
         self.is_boundary_point: InferredTensor = InferredTensor(Types.Bool, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_is_boundary_points); self.dataCollection.add_inferred_dataset(self.is_boundary_point, "is_boundary_point") # contains whether or not the given point is a boundary point
-        self.boundaryType: Parameter[BoundaryType] = Parameter[BoundaryType]("boundaryType", ("spherical_symmetry", self.__legacy_convert_boundaryType)); self.dataCollection.add_local_parameter(self.boundaryType)
-        self.center: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.m, storagedir+"center", ("geometry/points/position", self.__legacy_get_center)); self.dataCollection.add_data(self.center, "model center") #contains the center of the model, used for computing which part of the boundary is necessary
+        self.boundaryType: EnumParameter[BoundaryType, type[BoundaryType]] = EnumParameter[BoundaryType, type[BoundaryType]](BoundaryType, "boundaryType", ("spherical_symmetry", self.__legacy_convert_boundaryType)); self.dataCollection.add_local_parameter(self.boundaryType)
+        self.center: InferredTensor = InferredTensor(Types.GeometryInfo, [3], units.m, self._infer_center); self.dataCollection.add_inferred_dataset(self.center, "model center") #contains the center of the model, used for computing which part of the boundary is necessary
 
     def _infer_point2boundary(self) -> torch.Tensor:
         """Infers the tensor which maps points to boundary points.
@@ -76,8 +76,9 @@ class Boundary:
         is_max = torch.eq(positions_device, max_vals[None, :])
         return torch.any(torch.prod(is_max, dim=1))#type: ignore
     
-    def __legacy_get_center(self, positions: torch.Tensor) -> torch.Tensor:
+    def _infer_center(self) -> torch.Tensor:
         #makes assumption that all old models are (almost) symmetrical in all major axes
+        positions: torch.Tensor = self.dataCollection.get_data("position").get()#type: ignore
         min_vals, _ = torch.min(positions, dim=0)
         max_vals, _ = torch.max(positions, dim=0)
         return 0.5*(min_vals+max_vals)#type: ignore
