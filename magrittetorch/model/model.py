@@ -46,6 +46,7 @@ class Model:
         self.io.write(self.dataCollection)
 
     def read(self, legacy_mode: bool = False) -> None:
+        print("reading")
         self.io.read(self.dataCollection, legacy_mode)
 
     def get_boundary_intensity(self, point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
@@ -60,11 +61,11 @@ class Model:
             torch.Tensor: The boundary intensity. Has dimensions [NPOINTS, NFREQS]
         """
         #I need both frequency info (contained within sources) and boundary info, so this function goes in model
+        #TODO: add doppler shift, as the boundary condition slightly depends on the frequency
         return self.geometry.boundary.get_boundary_intensity(point_indices, freqhelper.original_frequencies[point_indices,:], device)
 
     # def solve_long_characteristics_NLTE_to_astropy(self, device: torch.device) -> Quantity[J/units.m**2]:
     #     solve_long_characteristics_NLTE(self, device).to_numpy(force=True)
-
 
 
     

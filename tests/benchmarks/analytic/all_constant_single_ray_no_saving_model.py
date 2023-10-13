@@ -40,7 +40,7 @@ dx   = 1.0E+12 * units.m                # [m]
 dv   = 0.0E+00 * units.m / units.s
 
 
-def create_and_run_model ():
+def create_and_run_model (nosave=False):
     """
     Create a model file for the all_constant benchmark, single ray.
     """
@@ -159,6 +159,7 @@ def create_and_run_model ():
         plt.xlabel('r [m]')
         plt.ylabel('Mean intensity [W/m$^{2}$]')
         plt.savefig(f'{resdir}{modelName}-{timestamp}.png', dpi=150)
+        plt.show()
 
 
     #error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.
@@ -170,9 +171,9 @@ def create_and_run_model ():
     return FIRSTORDER_AS_EXPECTED
 
 
-def run_test (nosave=False):
+def run_test (nosave=False) -> None:
 
-    create_and_run_model()
+    create_and_run_model(nosave)
     # run_model    (nosave)
 
     return

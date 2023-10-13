@@ -298,10 +298,8 @@ class Geometry:
         Returns:
             torch.Tensor: The doppler shift. Has dimensions [NPOINTS]
         """
-        distance_to_origin = torch.sum(-origin_position*raydir, dim=1) #dims: [NPOINTS]
-        distance_diff = distance_travelled - distance_to_origin #dims: [NPOINTS]
-        # Note: projected velocity of the shell onto the ray is = distance_diff/radius * current_velocity.
-        return 1.0 + (current_velocity * distance_diff / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
+        projected_distance_curr_to_origin = torch.sum(origin_position * raydir, dim=1) + distance_travelled
+        return 1.0 + (current_velocity * projected_distance_curr_to_origin / curr_radius - torch.sum(origin_velocity * raydir, dim=1))/c.value#type: ignore
             
 
     def get_neighbors_in_direction(self, raydir: torch.Tensor, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

@@ -5,10 +5,9 @@ from magrittetorch.model.sources.lineproducingspecies import LineProducingSpecie
 from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper
 from magrittetorch.utils.constants import min_freq_difference
 import torch
-from astropy import units
 
 storagedir : str = "sources/"
-
+MAX_VELOCITY_DIFFERENCE = 0.35#TODO: define param somewhere else
 
 class Lines:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
@@ -96,20 +95,27 @@ class Lines:
             #check doppler shift; if too large, go compute with large variant
             #otherwise, just compute using already computed opacities
             #TODO: define param somewhere else
-            small_shift = torch.abs(curr_shift-prev_shift)<0.35*lspec.relative_line_width.get(device)[curr_point_indices]
+            small_shift = torch.abs(curr_shift-prev_shift)<MAX_VELOCITY_DIFFERENCE*lspec.relative_line_width.get(device)[curr_point_indices]
             large_shift = torch.logical_not(small_shift)
+            # print("large shift", large_shift, curr_shift - prev_shift, lspec.relative_line_width.get(device)[curr_point_indices])
             #For a small shift, we can just multiply average opacity with distance to obtain the optical depth
-            line_optical_depth = ((curr_opacity+prev_opacity)*distance_increments[:, None]*0.5)[small_shift, :]
+            line_optical_depth = ((curr_opacity+prev_opacity)*distance_increments[:, None]*0.5)#[small_shift, :]
             #For a large shift, we analytically integrate the line profile function of an averaged line width
-            non_shifted_freqs = freqhelper.duplicated_frequencies[i][original_point_indices,:]
-            mean_linewidth = lspec.sorted_linewidths.get(device)[curr_point_indices[large_shift], :]+lspec.sorted_linewidths.get(device)[prev_point_indices[large_shift], :]
-            dimensionless_curr_freq = (curr_shift[large_shift, None] * non_shifted_freqs[large_shift, :] - lspec.sorted_linefreqs.get(device)[None, :])/mean_linewidth
-            dimensionless_prev_freq = (prev_shift[large_shift, None] * non_shifted_freqs[large_shift, :] - lspec.sorted_linefreqs.get(device)[None, :])/mean_linewidth
+            non_shifted_freqs = freqhelper.duplicated_frequencies[i][original_point_indices,:]#dims: [NPOINTS, NFREQS]
+            corresponding_lines = freqhelper.corresponding_lines[i]#dims: [NFREQS]
+            #err, forgot to add factor sqrt2 to linewidths
+            mean_linewidth = 0.5*(lspec.sorted_linewidths.get(device)[curr_point_indices[large_shift], :]+lspec.sorted_linewidths.get(device)[prev_point_indices[large_shift], :])#dims: [sum(large_shift), NLINES]
+            dimensionless_curr_freq = (curr_shift[large_shift, None] * non_shifted_freqs[large_shift, :] - lspec.sorted_linefreqs.get(device)[None, corresponding_lines])/mean_linewidth[:, corresponding_lines]#dims: [sum(large_shift), NFREQS]
+            dimensionless_prev_freq = (prev_shift[large_shift, None] * non_shifted_freqs[large_shift, :] - lspec.sorted_linefreqs.get(device)[None, corresponding_lines])/mean_linewidth[:, corresponding_lines]
             dimensionless_diff_freq = dimensionless_curr_freq - dimensionless_prev_freq #+ min_freq_difference is not required, as the shift is large
-            line_opacities = lspec.line_opacities.get(device)[:, freqhelper.corresponding_lines[i]]#dims: [NPOINTS, NLINEEVAL]
-            line_optical_depth[large_shift, :] = (0.5/torch.sqrt(torch.pi*torch.ones(1, device=device)) * (line_opacities[curr_point_indices[large_shift], :]+line_opacities[prev_point_indices[large_shift], :])/mean_linewidth/dimensionless_diff_freq*(torch.erf(dimensionless_curr_freq)-torch.erf(dimensionless_prev_freq)))
+            line_opacities = lspec.line_opacities.get(device)[:, freqhelper.corresponding_lines[i]]#dims: [NPOINTS, NFREQS]
+ 
+            average_line_opacity = 0.5 * non_shifted_freqs[large_shift, :] * (line_opacities[curr_point_indices[large_shift], :] + line_opacities[prev_point_indices[large_shift], :])
+            erfterm = 0.5 * average_line_opacity / dimensionless_diff_freq * (torch.erf(dimensionless_curr_freq) - torch.erf(dimensionless_prev_freq))
+            line_optical_depth[large_shift, :] = distance_increments[large_shift, None] / mean_linewidth * erfterm
+
             expanded_freq_index = freqhelper.original_frequency_index[i].expand(npoints, nfreqs)
-            sum_optical_depths += sum_optical_depths.scatter_add(1, expanded_freq_index, line_optical_depth)#TODO: scatter sum over last dimension
+            sum_optical_depths += sum_optical_depths.scatter_add(1, expanded_freq_index, line_optical_depth)
 
         return sum_optical_depths
         

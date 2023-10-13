@@ -30,6 +30,7 @@ class IO:
         file = h5py.File(self.save_location, 'r')
         parameter : Parameter[Any]
         if legacy_mode:#in legacy mode, data can be saved at different locations
+            print("reading legacy model")
             try_read_again_parameters: MutableSet[Parameter[Any]] = set()
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.legacy_name)
@@ -220,9 +221,7 @@ class IO:
                     parameter.set(parameter.get_enum_type()(file.attrs[parameter_path]))
                 else:
                     print(type(parameter.value), "new val", file.attrs[parameter_path])
-                # parameter.set(file.attrs[parameter_path])
-                # print(type(parameter.get()))
-                    # print(type(parameter.value))
+                    parameter.set(file.attrs[parameter_path])
 
 
     def write_parameter(self, file : h5py.File, parameter : Parameter[Any], storage_path : str) -> None:

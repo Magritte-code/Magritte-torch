@@ -307,6 +307,11 @@ class InferredTensorPerNLTEIter(InferredTensor):
     def __init__(self, dtype: torch.dtype, dims: List[Parameter[int] | int | None], unit: units.Unit, infer_function: Callable[[], torch.Tensor], relative_storage_location: str | None = None, legacy_converter: Tuple[str, Callable[[Any], torch.Tensor] | None] | None = None):
         super().__init__(dtype, dims, unit, infer_function, relative_storage_location, legacy_converter)
 
+    def infer(self) -> None:
+        """Forces a recomputation of this inferred torch.Tensor
+        """
+        self._force_infer()
+
 
 # Some data (strings) cannot be put into pytorch tensors (and do not need to be put there)
 class StorageNdarray():
