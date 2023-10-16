@@ -1,10 +1,11 @@
-# Magritte-torch
-A modern software library for simulating radiation transport, using pytorch as backend for GPU computations.
+<img src="docs/src/images/Magrittetorch_logo_no_background.png" alt="logo">
+
+Welcome to Magrittetorch, a modern software library for simulating radiation transport, using pytorch as backend for GPU computations.
 This is a port of [Magritte](https://github.com/Magritte-code/Magritte) to python, to allow for a redesign of the parallelization scheme.
-TODO: expand this introduction section, add magritte logo
+TODO: expand this introduction section
 
 # Features
-TODO: GPU computing, perturbation analysis, and all other features of Magritte
+TODO: GPU computing, perturbation analysis, astropy input, and all other features of Magritte
 
 # Documentation
 TODO: the goal is to reuse the API of [Magritte](https://github.com/Magritte-code/Magritte), to allow for seamless transition to this library. Take a look at the [documentation](https://magritte.readthedocs.io) of Magritte instead for now.
