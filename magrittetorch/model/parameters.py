@@ -17,8 +17,6 @@ class Parameter(Generic[T]):
         if legacy_converter is not None:
             self.legacy_name = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
-            print(self.legacy_conversion_function, self.legacy_name)
-        print(self.legacy_name, self.legacy_conversion_function)
         self.value : Optional[T] = None
     
     def __str__(self) -> str:
@@ -42,7 +40,7 @@ class Parameter(Generic[T]):
         Args:
             value (T): New value for parameter
         """
-        print("setting param", str(self), "to value", value)
+        # print("setting param", str(self), "to value", value)
         if self.value == None:
             self.value = value
             return

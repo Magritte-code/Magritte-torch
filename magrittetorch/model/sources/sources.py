@@ -37,8 +37,8 @@ class Sources:
         #TODO: when adding continuum or scattering, add them here
         return self.lines.get_sum_line_opacities_emissivities(point_indices, frequencies, device)
 
-    def get_total_opacity_emissivity_freqhelper(self, point_indices, shift, freqhelper: FrequencyEvalHelper, device) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.lines.get_sum_line_opacities_emissivities_using_freqevalhelper(point_indices, shift, freqhelper)
+    def get_total_opacity_emissivity_freqhelper(self, origin_point_indices: torch.Tensor, curr_point_indices: torch.Tensor, shift: torch.Tensor, freqhelper: FrequencyEvalHelper, device) -> Tuple[torch.Tensor, torch.Tensor]:
+        return self.lines.get_sum_line_opacities_emissivities_using_freqevalhelper(origin_point_indices, curr_point_indices, shift, freqhelper)
 
     def get_total_optical_depth(self, point_indices: torch.Tensor, frequencies: torch.Tensor, prev_frequencies: torch.Tensor, distances: torch.Tensor, curr_shift: torch.Tensor, prev_shift: torch.Tensor, curr_opacity: torch.Tensor, prev_opacity: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
         #TODO: when adding continumm or scattering, add them here

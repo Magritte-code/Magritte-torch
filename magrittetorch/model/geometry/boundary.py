@@ -94,7 +94,7 @@ class Boundary:
             NotImplementedError: If self.boundaryType has not yet been implemented. TODO: implement BoundaryType.AxisAlignedCube
 
         Returns:
-            torch.Tensor: The boolean tensor of boundary points lying at the end of rays in the given direction. Has dimensions [NPOINTS]
+            torch.Tensor: The boolean tensor of boundary points lying at the end of rays in the given direction. Has dimensions [parameters.npoints]
         """
         match self.boundaryType.get():
             case BoundaryType.Sphere1D:
@@ -121,7 +121,7 @@ class Boundary:
                 ybounds = torch.logical_or(full_boundary_positions[:,1] == minpos[1], full_boundary_positions[:,1] == maxpos[1])
                 zbounds = torch.logical_or(full_boundary_positions[:,2] == minpos[2], full_boundary_positions[:,2] == maxpos[2])
 
-                # For every cardinal direction, we check which points may still be on the boundary     
+                # For every axis direction, we check which points may still be on the boundary     
                 # For lower dimensional models, we do not care about the directions in which the model width is 0 
                 correctfullbounds = torch.zeros(self.parameters.nboundary.get(), dtype=Types.Bool, device=device)
                 if (maxpos[0] - minpos[0] != 0.0):
@@ -133,11 +133,10 @@ class Boundary:
 
                 incorrect_boundary = torch.logical_not(correctfullbounds)
 
-                # print("incorrect bound", incorrect_boundary, direction, full_boundary_positions)
                 is_boundary_copy[self.boundary2point.get(device)[incorrect_boundary]] = False
 
                 return is_boundary_copy
-            case _:#TODO: implement for cube boundary
+            case _:
                 raise NotImplementedError("Not yet implemented for BoundaryType", self.boundaryType.get())
 
     def get_boundary_intensity(self, point_indices: torch.Tensor, frequencies: torch.Tensor, device: torch.device) -> torch.Tensor:

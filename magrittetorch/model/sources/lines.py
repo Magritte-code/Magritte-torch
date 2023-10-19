@@ -156,20 +156,21 @@ class Lines:
     #         start_freq_idx+=nfreqs
     #     # return FrequencyEvalHelper(line_frequencies
 
-    def get_sum_line_opacities_emissivities_using_freqevalhelper(self, point_indices: torch.Tensor, doppler_shift: torch.Tensor, freqEvalHelper: FrequencyEvalHelper) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_sum_line_opacities_emissivities_using_freqevalhelper(self, origin_point_indices: torch.Tensor, curr_point_indices: torch.Tensor, doppler_shift: torch.Tensor, freqEvalHelper: FrequencyEvalHelper) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes the total opacity and emissivity contributions of all lines.
 
         Args:
-            point_indices (torch.Tensor): Point indices at which to evaluate the total line opacity/emissivity. Has dimensions [NPOINTS, NFREQS]
-            frequencies (torch.Tensor): Frequencies at which to evaluate the line opacity/emissivity in comoving frame at the point_indices. Has dimensions [NPOINTS, NFREQS]
-            device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
+            origin_point_indices (torch.Tensor): Point indices for the freqEvalHelper at which to evaluate the comoving frame frequency. Has dimensions [NPOINTS]
+            curr_point_indices (torch.Tensor): Point indices at which to evaluate the total line opacity/emissivity. Has dimensions [NPOINTS]
+            doppler_shift (torch.Tensor): Doppler shift at the current point. Has dimensions [NPOINTS]
+            freqEvalHelper (FrequencyEvalHelper): FrequencyEvalHelper object
 
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Computed line opacities and emissivities. Both torch.Tensors have dimensions [NPOINTS, NFREQS]
         """
         #TODO?: just take tensor and add to those tensors?; err, only useful if multiple types of sources exist
         device = freqEvalHelper.device
-        npoints = point_indices.size(dim=0)
+        npoints = origin_point_indices.size(dim=0)
         nfreqs = freqEvalHelper.original_frequencies.size(dim=1)
         sum_opacities, sum_emissivities = torch.zeros((npoints, nfreqs), dtype=Types.FrequencyInfo, device=device), torch.zeros((npoints, nfreqs), dtype=Types.FrequencyInfo, device=device)
         #maybe TODO?: vectorize computation over species; then less search overhead
@@ -179,8 +180,8 @@ class Lines:
             emissivities = lspec.line_emissivities.get(device)
             sorted_linefreqs = lspec.sorted_linefreqs.get(device)
             sorted_linewidths = lspec.sorted_linewidths.get(device)
-            frequencies_to_eval = freqEvalHelper.duplicated_frequencies[i][point_indices, :] * doppler_shift[:, None]
-            line_opacities, line_emissivities = lspec.evaluate_line_opacities_emissivites_single_line(frequencies_to_eval, freqEvalHelper.corresponding_lines[i], opacities[point_indices], emissivities[point_indices], sorted_linefreqs, sorted_linewidths[point_indices, :], device)
+            frequencies_to_eval = freqEvalHelper.duplicated_frequencies[i][origin_point_indices, :] * doppler_shift[:, None]
+            line_opacities, line_emissivities = lspec.evaluate_line_opacities_emissivites_single_line(frequencies_to_eval, freqEvalHelper.corresponding_lines[i], opacities[curr_point_indices], emissivities[curr_point_indices], sorted_linefreqs, sorted_linewidths[curr_point_indices, :], device)
             expanded_freq_index = freqEvalHelper.original_frequency_index[i].expand(npoints, nfreqs)
             sum_opacities = sum_opacities.scatter_add(1, expanded_freq_index, line_opacities)
             sum_emissivities = sum_emissivities.scatter_add(1, expanded_freq_index, line_emissivities)

@@ -44,7 +44,7 @@ class Geometry:
                 raise KeyError("Something went wrong with setting the model geometry")
     
     def distance_in_direction_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, points_position : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Computes the distances to the shells in a 3D setting
+        """Computes the distances to the points in a 3D setting
 
         Args:
             origin_coords (torch.Tensor): Coordinates of the origin of the rays
@@ -152,35 +152,37 @@ class Geometry:
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Next point indices, accumulated distance to the next points. Both torch.Tensors have dimensions [NPOINTS]
         """
-        masked_n_neighbors = n_neighbors_device[curr_points_index]
+        masked_n_neighbors = n_neighbors_device[curr_points_index]# dims: [NPOINTS]
         input_size = origin_coords.size(dim=0)
 
         #obtain which (indices of) neighbors to check in the linearized neighbors list 
-        indices_to_check = multi_arange(cum_n_neighbors_device[curr_points_index], n_neighbors_device[curr_points_index], device)
+        indices_to_check = multi_arange(cum_n_neighbors_device[curr_points_index], n_neighbors_device[curr_points_index], device) #dims: [sum(n_neighbors_device[curr_points_index])]
         #duplicate index of curr_points_index correspondingly
-        lengthening_indices = torch.arange(masked_n_neighbors.size(dim=0), device=device).repeat_interleave(masked_n_neighbors)
-        lengthened_origin_coords = origin_coords[lengthening_indices, :]
+        lengthening_indices = torch.arange(masked_n_neighbors.size(dim=0), device=device).repeat_interleave(masked_n_neighbors) #dims: [sum(n_neighbors_device[curr_points_index])]
+        lengthened_origin_coords = origin_coords[lengthening_indices, :]# dims: [sum(n_neighbors_device[curr_points_index]), 3]
 
-        neighbors_to_check = torch.gather(neighbors_device, 0, indices_to_check)
+        neighbors_to_check = torch.gather(neighbors_device, 0, indices_to_check) # dims: [sum(n_neighbors_device[curr_points_index])]
 
         #Get distances and compare with distance of current point; TODO: maybe use squared distance instead for ydist
-        xdistance, ydistance = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[neighbors_to_check])
+        xdistance, ydistance = self.distance_in_direction_3D_geometry(lengthened_origin_coords, raydirection, positions_device[neighbors_to_check]) # dims: [sum(n_neighbors_device[curr_points_index])] for both
 
         #Figure out the indices of the closest points
-        tempstuff = torch.zeros(input_size, device=device, dtype=Types.GeometryInfo)
-        minydists_per_point = tempstuff.scatter_reduce(0, lengthening_indices, ydistance, reduce="amin", include_self=False)#TODO: technically, we can reuse x dist at this point
+        tempstuff = torch.zeros(input_size, device=device, dtype=Types.GeometryInfo) #dims: [NPOINTS]
+        minydists_per_point = tempstuff.scatter_reduce(0, lengthening_indices, ydistance, reduce="amin", include_self=False) #dims: [NPOINTS]
         #broadcast these minimal distances once more, using gather
-        minydists = minydists_per_point.gather(0, lengthening_indices)
-        minindices = torch.nonzero(minydists == ydistance).flatten()#torch.nonzero likes to transpose the matrix for some reason
-        corresp_scatter_ids = torch.gather(lengthening_indices, 0, minindices)
+        minydists = minydists_per_point.gather(0, lengthening_indices) #dims: [sum(n_neighbors_device[curr_points_index])]
+        #Ties can arise with the computed ydistance's, so the dimension can be larger than NPOINTS
+        minindices = torch.nonzero(minydists == ydistance).flatten() #dims: [>=NPOINTS]
+        #torch.nonzero likes to transpose the matrix for some reason
+        corresp_scatter_ids = torch.gather(lengthening_indices, 0, minindices) #dims: [>=NPOINTS]
 
         #If equal distances would arise, the resulting dimension would be wrong. Thus I only use the first of each scatter (corresponding to the curr_points_indices)
         #TODO: figure out cheaper way to do this
-        first_result_of_each_scatter = torch.searchsorted(corresp_scatter_ids, torch.arange(input_size, device=device).type(torch.int64))
-        next_idx_of_neighbors_to_check = minindices[first_result_of_each_scatter]
+        first_result_of_each_scatter = torch.searchsorted(corresp_scatter_ids, torch.arange(input_size, device=device).type(torch.int64)) #dims: [NPOINTS]
+        next_idx_of_neighbors_to_check = minindices[first_result_of_each_scatter] #dims:[NPOINTS]
 
-        next_index = neighbors_to_check[next_idx_of_neighbors_to_check]
-        next_dist_travelled = xdistance[next_idx_of_neighbors_to_check]
+        next_index = neighbors_to_check[next_idx_of_neighbors_to_check] #dims: [NPOINTS]
+        next_dist_travelled = xdistance[next_idx_of_neighbors_to_check] #dims: [NPOINTS]
 
         return next_index, next_dist_travelled
 
@@ -319,5 +321,70 @@ class Geometry:
                 return self.points.get_neighbors_in_direction_3D_geometry(raydir, device)
             case GeometryType.SpericallySymmetric1D:
                 return self.points.neighbors.get(device), self.points.n_neighbors.get(device), self.points.get_cum_n_neighbors(device)
+            case _:
+                raise TypeError("Geometry type not yet supported: ", self.geometryType)
+            
+    def get_starting_distance_3D_geometry(self, raydir: torch.Tensor, starting_indices: torch.Tensor, starting_positions: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """
+        Computes the distance between the starting positions and the location of the starting indices, given the ray direction, for a `General3D` geometry.
+
+        Args:
+            raydir (torch.Tensor): The ray direction. Has dimensions [3].
+            starting_indices (torch.Tensor): The starting indices for the rays. Has dimensions [NPOINTS].
+            starting_positions (torch.Tensor): The starting positions for the rays. Has dimensions [NPOINTS, 3].
+            device (torch.device): The device on which to compute.
+
+        Returns:
+            torch.Tensor: The starting distances. Has dimensions [NPOINTS].
+        """
+        distance_on_ray : torch.Tensor = torch.sum((self.points.position.get(device)[starting_indices]-starting_positions) * raydir, dim = 1)
+        return distance_on_ray
+    
+    def get_starting_distance_1D_spherical_symmetry(self, raydir: torch.Tensor, starting_indices: torch.Tensor, starting_positions: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """
+        Computes the distance between the starting positions and the location of the starting indices, given the ray direction, for a `SpericallySymmetric1D` geometry.
+        Warning: Assumes the starting_positions to be either at the positions of the corresponding starting_indices, or outside the model.
+        
+        Args:
+            raydir (torch.Tensor): The ray direction. Has dimensions [3].
+            starting_indices (torch.Tensor): The starting indices for the rays. Has dimensions [NPOINTS].
+            starting_positions (torch.Tensor): The starting positions for the rays. Has dimensions [NPOINTS, 3].
+            device (torch.device): The device on which to compute.
+
+        Returns:
+            torch.Tensor: The starting distances. Has dimensions [NPOINTS].
+        """
+        distance = torch.zeros_like(starting_indices, dtype=Types.GeometryInfo, device=device) #dims: [NPOINTS]
+        maxdist = self.points.position.get(device)[:,0].max() #dims: [1]
+        # Only compute the distance for the rays that start outside the model
+        # For rays which start inside, but are not at the corresponding position, we could use the same algorithm as in get_next_1D_spherical_symmetry, 
+        # but we currently have not use for this functionality
+        starting_outside = torch.sum(starting_positions**2, dim=1) > maxdist**2 #dims: [NPOINTS]
+        projected_positions_outside = starting_positions[starting_outside] - raydir[None, :] * torch.sum(starting_positions[starting_outside] * raydir, dim=1, keepdim=True) #dims: [NPOINTS, 3]
+        rsquared = maxdist**2 - torch.sum(projected_positions_outside**2, dim=1) #dims: [NPOINTS]
+        # Negative values of rsquared are invalid to sqrt, so we set them to the minimal allowed distance
+        rsquared[rsquared<=min_dist**2] = min_dist**2 #dims: [NPOINTS]
+        distance[starting_outside] = maxdist - torch.sqrt(rsquared) #dims: [NPOINTS]
+        return distance
+
+
+    
+    def get_starting_distance(self, raydir: torch.Tensor, starting_indices: torch.Tensor, starting_positions: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """Computes the distance between the starting positions and the location of the starting indices, given the ray direction.
+
+        Args:
+            raydir (torch.Tensor): The ray direction. Has dimensions [3]
+            starting_indices (torch.Tensor): The starting indices for the rays. Has dimensions [NPOINTS]
+            starting_positions (torch.Tensor): The starting positions for the rays. Has dimensions [NPOINTS, 3]
+            device (torch.device): The device on which to compute
+
+        Returns:
+            torch.Tensor: The starting distances. Has dimensions [NPOINTS]
+        """
+        match self.geometryType.get():
+            case GeometryType.General3D:
+                return self.get_starting_distance_3D_geometry(raydir, starting_indices, starting_positions, device)
+            case GeometryType.SpericallySymmetric1D:
+                return self.get_starting_distance_1D_spherical_symmetry(raydir, starting_indices, starting_positions, device)
             case _:
                 raise TypeError("Geometry type not yet supported: ", self.geometryType)

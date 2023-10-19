@@ -17,14 +17,14 @@ class FrequencyEvalHelper:
         """Initialize the FrequencyEvalHelper
 
         Args:
-            frequencies (torch.Tensor): Non-shifted frequencies to use for all positions. Has dimensions [NPOINTS, NFREQS]
+            frequencies (torch.Tensor): Non-shifted frequencies to use for all positions. Has dimensions [parameters.npoints, NFREQS]
             listlspec (List[LineProducingSpecies]): List of LineProducingSpecies to use. Has dimensions [NLSPECS]
             model_velocities (torch.Tensor): Velocities of the model, used to infer the maximal doppler shift. Has dimensions [parameters.npoints, 3]
             device (torch.device): Device on which to compute.
         """
         self.lineProducingSpecies = listlspec
         self.original_frequencies = frequencies
-        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies
+        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, >=NLSPECS*NFREQS]
         self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies
         self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies
         self.deduce_close_lines(frequencies, model_velocities, device)

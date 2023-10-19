@@ -1,9 +1,11 @@
 from magrittetorch.algorithms.raytracer import RaytracerGenerator
 from magrittetorch.algorithms.torch_algorithms import interpolate2D_linear
 from magrittetorch.model.model import Model
+from magrittetorch.model.geometry.geometry import GeometryType
 from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper
 from magrittetorch.utils.storagetypes import Types
 from magrittetorch.utils.constants import min_opacity, min_optical_depth
+from magrittetorch.model.image import Image, ImageType
 import torch
 import time
 
@@ -66,15 +68,13 @@ def solve_long_characteristics_restructured_freqs(model:Model, direction: torch.
     #TODO: add boundary intensity add end point
 
     for (next_point, prev_point, travelled_distance, original_index) in RaytracerGenerator(model, direction, device):
-        # print(next_point, prev_point)
         doppler_shift = model.geometry.get_doppler_shift(next_point, origin_positions[original_index], origin_velocities[original_index], direction, travelled_distance, device)
-        opacities, emissivities = model.sources.get_total_opacity_emissivity_freqhelper(next_point, doppler_shift, freqhelper, device)
+        opacities, emissivities = model.sources.get_total_opacity_emissivity_freqhelper(original_index, next_point, doppler_shift, freqhelper, device)
         optical_depths = model.sources.get_total_optical_depth_freqhelper(next_point, prev_point, original_index, freqhelper, travelled_distance, doppler_shift, doppler_shift, opacities, emissivities, device)
         source_function = emissivities/opacities
         #TODO: better implementation, using prev and current source function, instead of constant source
         computed_intensity[original_index] += source_function * (1.0-torch.exp(-optical_depths)) * torch.exp(-sum_optical_depths[original_index])
         sum_optical_depths[original_index] += optical_depths
-        # print(computed_intensity)
 
 
 def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tensor, start_positions: torch.Tensor, start_velocities: torch.Tensor, start_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
@@ -96,46 +96,57 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
     #no work distribution, as this should happen in a higher function
 
     #unavoidable full mapping; costs O(Npoints*Nneighbors) memory
-    positions_device = model.geometry.points.position.get(device)
-    npoints = start_positions.size(dim=0)#number of points to trace
+    positions_device = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
+    npoints = start_positions.size(dim=0)#number of points to trace NPOINTS
 
     #get neighbors per direction; saves 50% time for raytracing in 3D geometries
-    neighbors_device, n_neighbors_device, cum_n_neighbors_device = model.geometry.get_neighbors_in_direction(raydir, device)
+    neighbors_device, n_neighbors_device, cum_n_neighbors_device = model.geometry.get_neighbors_in_direction(raydir, device) 
+    #dims: [sum(n_neighbors_in_correct_direction)], [parameters.npoints], [parameters.npoints]
 
 
     # is_boundary_point_device = model.geometry.boundary.is_boundary_point.get(device)
-    is_boundary_point_device = model.geometry.boundary.get_boundary_in_direction(raydir, device)
-    sum_optical_depths = torch.zeros_like(freqhelper.original_frequencies, dtype=Types.FrequencyInfo, device=device)
-    computed_intensity = torch.zeros_like(freqhelper.original_frequencies, dtype=Types.FrequencyInfo, device=device)
-    distance_travelled = torch.zeros(npoints, dtype=Types.GeometryInfo, device=device)
+    is_boundary_point_device = model.geometry.boundary.get_boundary_in_direction(raydir, device) #dims: [parameters.npoints]
+    sum_optical_depths = torch.zeros((npoints, freqhelper.original_frequencies.size(dim=1)), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+    computed_intensity = torch.zeros((npoints, freqhelper.original_frequencies.size(dim=1)), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+
+    # The starting indices do not necessarily correspond with the starting indices, as imaging starts tracing outside the model
+    # Therefore the starting distance can be nonzero
+    distance_travelled = model.geometry.get_starting_distance(raydir, start_indices, start_positions, device) #dims: [NPOINTS]
 
     start_ids = start_indices.clone()#will be masked, so needs to be clone in order to preserve the original indices (for tracing other directions)
-    prev_ids = start_ids
+    prev_ids = start_ids #dims: [NPOINTS]
 
-    curr_ids = start_ids.clone()
-    mask_active_rays = torch.logical_not(is_boundary_point_device[curr_ids])
-    boundary_indices = curr_ids[is_boundary_point_device[curr_ids]]
+    curr_ids = start_ids.clone() #dims: [NPOINTS]
+    boundary_mask = is_boundary_point_device[curr_ids] #dims: [NPOINTS]
+    #for 1D spherical symmetry, we need to allow the rays to start if they are going inside the model
+    if (model.geometry.geometryType.get() == GeometryType.SpericallySymmetric1D):
+        boundary_mask = torch.sum((start_positions - raydir[None, :] * torch.matmul(start_positions, raydir)[:, None])**2, dim=1) >= torch.max(model.geometry.points.position.get(device)[:, 0])**2 #dims: [NPOINTS]
+
+    mask_active_rays = torch.logical_not(boundary_mask) #dims: [N_ACTIVE_RAYS<=NPOINTS] Dimension will change, as not all rays end at the same time
+    data_indices = torch.arange(npoints, device=device) #dims: [N_ACTIVE_RAYS<=NPOINTS]
+    boundary_indices = curr_ids[boundary_mask] #dims: [N_ACTIVE_RAYS<=NPOINTS]
     #TODO: refactor source function computation (emissivty/opacity), as some safety constant min_opacity is included
-    doppler_shift = torch.ones(npoints, dtype = Types.FrequencyInfo, device=device)
-    prev_shift = torch.ones(npoints, dtype= Types.FrequencyInfo, device=device)
-    prev_opacities, starting_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(curr_ids, doppler_shift, freqhelper, device)
-    prev_source_function = starting_emissivities/(prev_opacities+min_opacity)
+    doppler_shift = torch.ones(npoints, dtype = Types.FrequencyInfo, device=device) #dims: [NPOINTS]
+    prev_shift = torch.ones(npoints, dtype= Types.FrequencyInfo, device=device) #dims: [NPOINTS]
+    prev_opacities, starting_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, doppler_shift, freqhelper, device) #dims: [NPOINTS, NFREQS]
+    prev_source_function = starting_emissivities/(prev_opacities+min_opacity) #dims: [NPOINTS, NFREQS]
 
     #already mask previous values
-    prev_opacities = prev_opacities[mask_active_rays]
-    prev_source_function = prev_source_function[mask_active_rays]
-    prev_shift = prev_shift[mask_active_rays]
+    prev_opacities = prev_opacities[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+    prev_source_function = prev_source_function[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+    prev_shift = prev_shift[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS]
 
     #when encountering boundary points, add their intensity contribution
     #evaluate boundary intensity
     #technically boundary_indices
-    computed_intensity[boundary_indices] = model.get_boundary_intensity(boundary_indices, freqhelper, device)
+    computed_intensity[boundary_mask] = model.get_boundary_intensity(boundary_indices, freqhelper, device) #dims: [NPOINTS, NFREQS]
 
     while (torch.any(mask_active_rays)):
         #continuously subset the tensors, reducing time needed to access the relevant subsets
         #TODO? also try subsetting computed_intensity, sum_optical_depth
         curr_ids = curr_ids.masked_select(mask_active_rays)
         start_ids = start_ids.masked_select(mask_active_rays)
+        data_indices = data_indices.masked_select(mask_active_rays) #dims: [N_ACTIVE_RAYS<=NPOINTS]
         distance_travelled = distance_travelled.masked_select(mask_active_rays)
         start_positions = start_positions[mask_active_rays,:]
         start_velocities = start_velocities[mask_active_rays,:]
@@ -151,15 +162,15 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
 
         #After raytracing, we now compute everything required
         doppler_shift = model.geometry.get_doppler_shift(curr_ids, start_positions, start_velocities, raydir, distances, device)
-        curr_opacities, curr_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(curr_ids, doppler_shift, freqhelper, device)
+        curr_opacities, curr_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, doppler_shift, freqhelper, device)
         optical_depths = model.sources.get_total_optical_depth_freqhelper(curr_ids, prev_ids, start_ids, freqhelper, distance_increment, doppler_shift, prev_shift, curr_opacities, prev_opacities, device)
         curr_source_function = curr_emissivities/(curr_opacities+min_opacity)
 
         #To compute the intensity contribution, we need to multiply the source function by the factors below
         close_factor = 1+torch.expm1(-optical_depths-min_optical_depth)/(optical_depths+min_optical_depth)
         far_factor = -close_factor-torch.expm1(-optical_depths)
-        computed_intensity[start_ids] += (far_factor * curr_source_function + close_factor * prev_source_function) * torch.exp(-sum_optical_depths[start_ids])
-        sum_optical_depths[start_ids] += optical_depths
+        computed_intensity[data_indices] += (far_factor * curr_source_function + close_factor * prev_source_function) * torch.exp(-sum_optical_depths[data_indices])
+        sum_optical_depths[data_indices] += optical_depths
 
         #already mask the current data
         prev_source_function = curr_source_function[mask_active_rays]
@@ -168,7 +179,7 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
 
         #and add boundary intensity to the rays which have ended, taking into account the current extincition factor e^-tau
         ended_rays = torch.logical_not(mask_active_rays)
-        computed_intensity[start_ids[ended_rays]] += model.get_boundary_intensity(curr_ids[ended_rays], freqhelper, device) * torch.exp(-sum_optical_depths[start_ids[ended_rays]])
+        computed_intensity[data_indices[ended_rays]] += model.get_boundary_intensity(curr_ids[ended_rays], freqhelper, device) * torch.exp(-sum_optical_depths[data_indices[ended_rays]])
 
     return computed_intensity
 
@@ -234,14 +245,17 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     # return solve_long_characteristics_single_direction(model, raydirs[0,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
 
 
-def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device):
-    """Computes the 
+def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device) -> None:
+    """Computes the level populations using the statistical equilibrium equations, given the mean line intensities J
     TODO: also include accelerated lambda iteration, just add (optional) extra functon argument
 
     Args:
         model (Model): The model
         J (torch.Tensor): The (effective) mean line intensity. Has dims [parameters.npoints, parameters.nlines?]
-        device (torch.device): Device on which to set the level populations? Do we need this?
+        device (torch.device): Device on which to compute
+
+    Returns:
+        None
     """
 
     total_encountered_lines: int = 0
@@ -255,7 +269,6 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         einsteinBa = linedata.Ba.get(device)
         einsteinBs = linedata.Bs.get(device)
         Jrelevant = J[:, total_encountered_lines:total_encountered_lines+nlines]
-        print(Jrelevant)
         upperidx = linedata.irad.get(device) #dims: [nlines]; all values (indices) in [0, nlev-1]
         loweridx = linedata.jrad.get(device) #dims: [nlines]; all values (indices) in [0, nlev-1]
         rate_upper_to_lower = torch.zeros_like(Jrelevant[0, :])
@@ -269,7 +282,6 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         full_upperidx = upperidx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
         full_loweridx = loweridx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
 
-        print("idx", upperidx, loweridx)
         pointidxrange = torch.arange(npoints, dtype=Types.IndexInfo, device=device)#dims: [npoints]
 
         #TODO: check that these values are correctly put if duplicate indices are present
@@ -323,9 +335,24 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         
         total_encountered_lines+=nlines
 
+    return
+
 
 
 def compute_level_populations(model: Model, device: torch.device, max_n_iterations: int = 50) -> None:
+    """
+    Computes the level populations of the given model using an iterative approach,
+    utilizing the mean line intensities to solve the statistical equilibrium equations.
+    TODO: implement convergence check, Ng-accel, ALI (in this order)
+
+    Args:
+        model (Model): The model for which to compute the level populations.
+        device (torch.device): The device on which to compute.
+        max_n_iterations (int, optional): The maximum number of iterations to perform. Defaults to 50.
+
+    Returns:
+        None
+    """
     #TODO: check if level pops have converged
     #to make sure that everything is up to date, we infer
     model.dataCollection.infer_data()
@@ -335,3 +362,39 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
         compute_and_set_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
         model.dataCollection.infer_data()
 
+
+def image_model(model: Model, ray_direction: torch.Tensor, freqs: torch.Tensor, device: torch.device, Nxpix: int = 256, Nypix: int = 256, imageType: ImageType = ImageType.Intensity) -> None:
+    """
+    Computes an image of the model for a given ray direction at the specified indices.
+    Appends the resulting image to model.images
+
+    Args:
+    - model (Model): The model to use for computing the image.
+    - ray_direction (torch.Tensor): The direction of the ray. Has dimensions [3].
+    - freqs (torch.Tensor): The frequency range to use for computing the image. Has dimensions [NFREQS].
+    - device (torch.device): The device on which to compute.
+    - Nxpix (int, optional): The number of pixels in the x direction. Defaults to 256.
+    - Nypix (int, optional): The number of pixels in the y direction. Defaults to 256.
+    - imageType (ImageType, optional): The type of image to compute. Defaults to ImageType.Intensity. TODO: not implemented for other types
+
+    Returns:
+    - None
+    """
+    image_index: int = len(model.images)
+    image = Image(model.parameters, model.dataCollection, imageType, ray_direction, freqs, image_index)
+    image.setup_image(model.geometry, Nxpix, Nypix)
+    image.imageType.set(imageType)
+    freqhelper = FrequencyEvalHelper(freqs.unsqueeze(0).repeat(model.parameters.npoints.get(), 1), model.sources.lines.lineProducingSpecies.list, model.geometry.points.velocity.get(device), device)#type: ignore
+
+    if model.geometry.geometryType.get() == GeometryType.General3D:
+        start_positions, start_indices = image.transform_pixel_coordinates_to_3D_starting_coordinates(model.geometry, device)
+        start_velocities = torch.zeros_like(start_positions)
+        intensities = solve_long_characteristics_single_direction(model, ray_direction, start_positions, start_velocities, start_indices, freqhelper, device)
+        image.I.set(intensities)
+    elif model.geometry.geometryType.get() == GeometryType.SpericallySymmetric1D:
+        start_positions, start_indices = image.transform_pixel_coordinates_to_1D_starting_coordinates(model.geometry, device)#TODO: fix this, I just need start positions and 
+        start_velocities = torch.zeros_like(start_positions)
+        intensities = solve_long_characteristics_single_direction(model, ray_direction, start_positions, start_velocities, start_indices, freqhelper, device)
+        image.I.set(intensities)
+
+    model.images.append(image)

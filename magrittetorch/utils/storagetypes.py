@@ -21,8 +21,6 @@ class StorageTensor():
             legacy_converter (Tuple[str, Optional[Callable[[Any], torch.Tensor]]): The location at which this torch.Tensor is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             tensor (Optional[torch.Tensor]): tensor to store and check dimensions of; if None, then dimensions are not checked. The tensor has then to be filled in later on
         """
-        if tensor is not None:
-            self.check_dims(tensor)
         self.relative_storage_location : str = relative_storage_location
 
         #some storage locations/data might be different for C++ magritte and python magritte, thus we need some conversion for legacy functionality
@@ -38,6 +36,8 @@ class StorageTensor():
         self.tensormap: Dict[torch.device, torch.Tensor] = {}
         self.dims: List[Union[Parameter[int], int, None]] = dims
         self.isSet: bool = False
+        if tensor is not None:
+            self.set(tensor)
 
     def check_dims(self, new_tensor : torch.Tensor) -> None:
         """Checks the dimensions of the stored tensor. Also checks type of data in tensor.
@@ -50,6 +50,7 @@ class StorageTensor():
         if new_tensor is None:
             raise AssertionError("The tensor has not yet been set")
         size : torch.Size = new_tensor.size()
+        print(len(size), len(self.dims))
         if len(size) != len(self.dims):
             raise AssertionError("The amount of dimensions of the tensor does not correspond to the amount of dimensions required. new_tensor dims: " + str(size) + " required: " + str(self.dims))
         for i, dim in zip(range(len(size)), self.dims):

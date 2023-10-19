@@ -8,7 +8,9 @@ from magrittetorch.model.thermodynamics.thermodynamics import Thermodynamics
 from magrittetorch.model.sources.sources import Sources
 from magrittetorch.utils.io import IO
 from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper
+from magrittetorch.model.image import Image, ImageType
 import torch
+
 
 
 
@@ -22,10 +24,6 @@ class NgAccelerationType(Enum):
 # Dummy classes; should be refactored into seperate files
 class Radiation:
     # Define the Radiation class here
-    pass
-
-class Image:
-    # Define the Image class here
     pass
 
 class Model:
@@ -63,9 +61,3 @@ class Model:
         #I need both frequency info (contained within sources) and boundary info, so this function goes in model
         #TODO: add doppler shift, as the boundary condition slightly depends on the frequency
         return self.geometry.boundary.get_boundary_intensity(point_indices, freqhelper.original_frequencies[point_indices,:], device)
-
-    # def solve_long_characteristics_NLTE_to_astropy(self, device: torch.device) -> Quantity[J/units.m**2]:
-    #     solve_long_characteristics_NLTE(self, device).to_numpy(force=True)
-
-
-    

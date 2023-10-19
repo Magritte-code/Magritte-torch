@@ -199,7 +199,7 @@ def create_and_run_model (nosave = False, use_widgets = True):
         widgets.interact(plot2, r=(0,nrays-1,1), p=(0,npoints-1,1))
 
     #I am aware that errors exist on the first and last point on the rays, but this is due to how the boundary is handled
-    error_u = np.abs(rtutils.relative_error(u_analytic[:,1:-1,:], u_computed[:,1:-1,:]))
+    error_u = np.abs(rtutils.relative_error(u_analytic, u_computed))
     # error_u_2f = np.abs(rtutils.relative_error(us, u_2f))
 
     log_err_min: Quantity = np.log10(np.min(error_u))

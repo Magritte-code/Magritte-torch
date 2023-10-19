@@ -64,7 +64,6 @@ def lineOpacity(linedata: Linedata, pop: Quantity[units.m**-3]) -> Quantity[unit
     for k in range(linedata.nrad.get()):
         i = linedata.irad.get()[k]
         j = linedata.jrad.get()[k]
-        print(linedata.Ba.get_astropy()[k] *  constants.h * pop[j])
         chi[k] = constants.h*linedata.frequency.get_astropy()[k]/(4.0*np.pi) * (linedata.Ba.get_astropy()[k]*pop[j] - linedata.Bs.get_astropy()[k]*pop[i])
     # Done
     return chi
