@@ -84,7 +84,6 @@ class IO:
                 for localParameter in dataCollection.localParameters:
                     #TODO: reading every local parameter again is inefficient; keep track of currently read parameter/not yet read parameters
                     # try:
-                    print(localParameter, localParameter.name)
                     self.read_parameter(file, localParameter, localParameter.name)
                     # except Exception as e:
                     #     print(e)
@@ -119,7 +118,6 @@ class IO:
         if not dataCollection.is_data_complete():
             raise ValueError("Data set is not yet complete. Please fill in the missing data points")
         file = h5py.File(self.save_location, 'w')
-        print(file, self.save_location)
         for param in dataCollection.parameters:#type: ignore
             print("writing", param)
             self.write_parameter(file, param, param.name)
@@ -199,9 +197,7 @@ class IO:
             parameter (Parameter): The parameter to read
             legacy_conversion_function (Optional[Callable[[Any], T]]): Optionally adds a conversion function for the read data to determine the value of the parameter
         """
-        print("reading parameter at", parameter_path)
         if legacy_conversion_function is not None:
-            print("legacy read")
             try:
                 parameter.set(legacy_conversion_function(file[parameter_path]))#legacy conversion function will act directly on a dataset to infer the parameter value
             except KeyError:
@@ -210,7 +206,6 @@ class IO:
             try:
                 path : str; attribute : str 
                 #mypy doesnt allow for unpacking of strings, thus ignore the warnings
-                print("setting the", parameter)
                 path, attribute = parameter_path.rsplit("/", 1)#type: ignore
                 if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
                     parameter.set(parameter.get_enum_type()(file[path].attrs[attribute]))
@@ -220,7 +215,6 @@ class IO:
                 if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
                     parameter.set(parameter.get_enum_type()(file.attrs[parameter_path]))
                 else:
-                    print(type(parameter.value), "new val", file.attrs[parameter_path])
                     parameter.set(file.attrs[parameter_path])
 
 
@@ -233,7 +227,6 @@ class IO:
             parameter (Parameter): The parameter to write
         """
         path : str; attribute : str 
-        print(storage_path)
         #mypy doesnt allow for unpacking of strings, thus ignore the warnings
         try:
             path, attribute = storage_path.rsplit("/", 1)#type: ignore

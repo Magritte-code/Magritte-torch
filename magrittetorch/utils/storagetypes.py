@@ -50,7 +50,6 @@ class StorageTensor():
         if new_tensor is None:
             raise AssertionError("The tensor has not yet been set")
         size : torch.Size = new_tensor.size()
-        print(len(size), len(self.dims))
         if len(size) != len(self.dims):
             raise AssertionError("The amount of dimensions of the tensor does not correspond to the amount of dimensions required. new_tensor dims: " + str(size) + " required: " + str(self.dims))
         for i, dim in zip(range(len(size)), self.dims):
@@ -587,7 +586,6 @@ class DataCollection():
         Args:
             local_parameter (Parameter[Any]): _description_
         """
-        print(local_parameter.legacy_name)
         self.localParameters.append(local_parameter)
 
 

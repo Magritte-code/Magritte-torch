@@ -488,7 +488,6 @@ def getSpeciesNumber (species: Species, name: str) -> int:
     ------
     KeyError : if the species name is not found in the list of chemical species
     '''
-    print(species.symbol.get())
     for i in range (len (species.symbol.get())):
         if (species.symbol.get()[i].decode() == str(getProperName(name))):#Internally, we save a byte string, for hdf5 writing purposes
             #We might get issues with this in the future
