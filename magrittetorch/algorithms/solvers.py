@@ -297,8 +297,8 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         full_abundance = model.chemistry.species.abundance.get(device)[:, :]#dims: [npoints, nspecs]
         #for all collision partners, add their contributions to the transition matrix
         for colpar in lspec.linedata.colpar:
-            colpar_abundance = full_abundance[:, colpar.num_col_partner.get()]#dims: [npoints]
-            #TODO: adjust the darn abundance, depending on whether we have ortho or para H2
+            #Adjusting the abundance, depending on whether we have ortho or para H2
+            colpar_abundance = colpar.adjust_abundace_for_ortho_para_h2(temperature, full_abundance[:, colpar.num_col_partner.get()])#dims: [npoints]
             
             #and do exactly the same as for the normal level transitions
             #dims tmp:[ntmp], Cd/Ce: [ntmp, ncol], temperature: [npoints] -> interpolated -> dims: [npoints, ncol]

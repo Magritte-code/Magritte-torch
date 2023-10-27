@@ -20,4 +20,27 @@ class CollisionPartner:
         self.num_col_partner: Parameter[int] = Parameter[int](storagedir+"num_col_partner"); self.dataCollection.add_local_parameter(self.num_col_partner)
         self.orth_or_para_H2: Parameter[str] = Parameter[str](storagedir+"orth_or_para_H2"); self.dataCollection.add_local_parameter(self.orth_or_para_H2)
 
-        
+
+    #TODO: implement this in preprocessing, maybe just infer some more complete set of species data
+    def adjust_abundace_for_ortho_para_h2(self, temperature: torch.Tensor, abundance: torch.Tensor) -> torch.Tensor:
+        """Adjusts the abundance of H2 for ortho-para H2
+
+        Args:
+            temperature (torch.Tensor): Temperature at which to evaluate the collisional rates
+            abundance (torch.Tensor): The abundance of H2 (or any other species)
+
+        Returns:
+            torch.Tensor: The abundance of H2 adjusted for ortho-para H2
+            The abundance is unchanged for other species
+        """
+        if self.orth_or_para_H2.get() != "n":
+            #See https://en.wikipedia.org/wiki/Spin_isomers_of_hydrogen
+            #Formula originates from standard thermodynamic partition functions (as in the wikipedia article)
+            #rotation temperature of H2 is 87.6 K according to: P. Atkins and J. de Paula, Physical Chemistry", 9th edition (W.H. Freeman 2010), Table 13.2 in appendix Data section
+            #Approximately twice the value of the rotation temperature is used in the exponent below
+            frac_H2_para = 1.0/(1.0 + 9.0 * torch.exp(-175.0/temperature))
+            if self.orth_or_para_H2.get() == "o":
+                return abundance * (1.0 - frac_H2_para)
+            elif self.orth_or_para_H2.get() == "p":
+                return abundance * frac_H2_para
+        return abundance
