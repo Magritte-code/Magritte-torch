@@ -112,7 +112,7 @@ class Lines:
  
             average_line_opacity = 0.5 * non_shifted_freqs[large_shift, :] * (line_opacities[curr_point_indices[large_shift], :] + line_opacities[prev_point_indices[large_shift], :])
             erfterm = 0.5 * average_line_opacity / dimensionless_diff_freq * (torch.erf(dimensionless_curr_freq) - torch.erf(dimensionless_prev_freq))
-            line_optical_depth[large_shift, :] = distance_increments[large_shift, None] / mean_linewidth * erfterm
+            line_optical_depth[large_shift, :] = distance_increments[large_shift, None] / mean_linewidth[:, corresponding_lines] * erfterm
 
             expanded_freq_index = freqhelper.original_frequency_index[i].expand(npoints, nfreqs)
             sum_optical_depths += sum_optical_depths.scatter_add(1, expanded_freq_index, line_optical_depth)
