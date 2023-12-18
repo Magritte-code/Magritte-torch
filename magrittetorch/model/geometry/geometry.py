@@ -53,11 +53,11 @@ class Geometry:
 
         Returns:
             torch.Tensor: Distance travelled on the rays to reach the given points, with respect to the origin_coords and the raydirection.
-            torch.Tensor: Perpendicular distance of the rays to the points
+            torch.Tensor: Perpendicular squared distance of the rays to the points. Note: numerical error can cause this to be negative
         """
         distance_on_ray : torch.Tensor = torch.sum((points_position-origin_coords) * raydirection, dim = 1)
         total_distance2 : torch.Tensor = torch.sum((points_position-origin_coords)**2, dim = 1)
-        return distance_on_ray, torch.sqrt(total_distance2-distance_on_ray**2)
+        return distance_on_ray, total_distance2-distance_on_ray**2
     
     # def distance_in_direction_1D_spherical_symmetry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, points_position : torch.Tensor, distance_travelled : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     #     """Computes the distances to the shells in a 1D spherically symmetric setting
