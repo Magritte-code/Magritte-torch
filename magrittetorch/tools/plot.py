@@ -128,7 +128,7 @@ def image_mpl(
     # Extract the spectral / velocity data
     freqs = model.images[image_nr].freqs.get_astropy() #dims: [image.nfreqs]
     f_ij  = np.mean(freqs)
-    velos = (freqs - f_ij) / f_ij * constants.c
+    velos = (f_ij - freqs) / f_ij * constants.c
 
     # Interpolate the scattered data to an image (regular grid)
     Is = np.zeros((nfreqs)) * units.W / units.m**2 / units.sr / units.Hz
@@ -168,7 +168,7 @@ def image_mpl(
     figs = []
     gs   = GridSpec(1,2, wspace=.1, width_ratios=[2, 1])
 
-    for f in tqdm(range(nfreqs)):
+    for f in tqdm(reversed(range(nfreqs)), total=nfreqs):
         fig = plt.figure(dpi=300)
         ax1 = fig.add_subplot(gs[0])
         ax  = ax1.contourf(
@@ -306,7 +306,7 @@ def image_plotly(
     # Extract the spectral / velocity data
     freqs = model.images[image_nr].freqs.get_astropy() #dims: [image.nfreqs]
     f_ij  = np.mean(freqs)
-    velos = (freqs - f_ij) / f_ij * constants.c
+    velos = (f_ij - freqs) / f_ij * constants.c
 
     # Interpolate the scattered data to an image (regular grid)
     Is = np.zeros((nfreqs)) * units.W / units.m**2 / units.sr / units.Hz
@@ -373,7 +373,7 @@ def image_plotly(
     y_min = np.min(ys)
 
     # Build up plot
-    for f in range(nfreqs):
+    for f in reversed(range(nfreqs)):
         fig.add_trace(
             go.Heatmap(
                 x          = xs       .astype(float),
