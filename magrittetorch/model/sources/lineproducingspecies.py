@@ -233,8 +233,8 @@ class LineProducingSpecies:
         Args:
             frequencies (torch.Tensor): Frequencies at which to evaluate the line opacity/emmissivity. Has dimensions [NPOINTS, NFREQS]
             line_index (torch.Tensor): Index of the line to evaluate. Has dimensions [NFREQS]
-            line_opacities (torch.Tensor): Integrated line opacities. Has dimensions [NPOINTS, NFREQS]
-            line_emissivities (torch.Tensor): Integrated line emissivities. Has dimensions [NPOINTS, NFREQS]
+            line_opacities (torch.Tensor): Integrated line opacities. Has dimensions [NPOINTS, self.linedata.nrad]
+            line_emissivities (torch.Tensor): Integrated line emissivities. Has dimensions [NPOINTS, self.linedata.nrad]
             sorted_linefreqs_device (torch.Tensor): Sorted line frequencies. Has dimensions [self.linedata.nrad]
             sorted_linewidths_device (torch.Tensor): Sorted line widths. Has dimensions [NPOINTS, self.linedata.nrad]
             device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
@@ -245,9 +245,28 @@ class LineProducingSpecies:
         inverse_line_widths = 1.0/sorted_linewidths_device
         #very narrow line profile
         line_profile_evaluation = sorted_linefreqs_device[None, line_index]*inverse_line_widths[:, line_index]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, line_index]*(sorted_linefreqs_device[None, line_index]-frequencies), 2))
-        line_opacities = line_profile_evaluation*line_opacities
-        line_emissivities = line_profile_evaluation*line_emissivities
+        line_opacities = line_profile_evaluation*line_opacities[:, line_index]
+        line_emissivities = line_profile_evaluation*line_emissivities[:, line_index]
         return line_opacities, line_emissivities
 
+    def compute_ng_accelerated_level_pops(self, previous_level_pops: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """
+        Computes the Ng-accelerated level populations based on the previous level populations. (method based on Olson, Buchler, Auer 1986; described in more detail in Ceulemans et al. 2023 (in prep.)))
+
+        Args:
+            previous_level_pops (torch.Tensor): The previous level populations. Has dimensions [N_PREV_ITS, parameters.npoints, linedata.nlev].
+            device (torch.device): The device on which to compute.
+
+        Returns:
+            torch.Tensor: The NG-accelerated level populations. Has dimensions [parameters.npoints, linedata.nlev].
+        """
+        #?TODO?: add option for choosing ng acceleration order
+        residual_pops = previous_level_pops.diff(dim=0) #dimensions = [N_PREV_ITS-1, parameters.npoints, linedata.nlev]
+        residual_matrix = torch.tensordot(residual_pops, residual_pops, dims=([1,2],[1,2])) #dims = [N_PREV_ITS-1, N_PREV_ITS-1]
+        ng_accel_order = residual_matrix.shape[0]
+        ones = torch.ones(ng_accel_order, device=device, dtype=Types.LevelPopsInfo)
+        ng_coefficients = torch.linalg.solve(residual_matrix, ones) #dims = [N_PREV_ITS-1]
+        ng_accelerated_pops = torch.einsum("i,ijk->jk", ng_coefficients, previous_level_pops[1:,:,:]) #dims = [parameters.npoints, linedata.nlev]
+        return ng_accelerated_pops
 
 
