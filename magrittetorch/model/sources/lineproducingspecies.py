@@ -266,6 +266,7 @@ class LineProducingSpecies:
         ng_accel_order = residual_matrix.shape[0]
         ones = torch.ones(ng_accel_order, device=device, dtype=Types.LevelPopsInfo)
         ng_coefficients = torch.linalg.solve(residual_matrix, ones) #dims = [N_PREV_ITS-1]
+        ng_coefficients = ng_coefficients / torch.sum(ng_coefficients)#normalize the coefficients
         ng_accelerated_pops = torch.einsum("i,ijk->jk", ng_coefficients, previous_level_pops[1:,:,:]) #dims = [parameters.npoints, linedata.nlev]
         return ng_accelerated_pops
 

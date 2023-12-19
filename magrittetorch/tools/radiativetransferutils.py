@@ -150,4 +150,4 @@ def relative_error (a: T,b: T) -> T:
         T: The relative error
     """
 
-    return 2.0*(a-b)/(a+b)#type: ignore
+    return 2.0*abs(a-b)/(a+b)#type: ignore
