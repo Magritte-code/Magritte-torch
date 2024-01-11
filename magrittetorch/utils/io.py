@@ -119,7 +119,6 @@ class IO:
             raise ValueError("Data set is not yet complete. Please fill in the missing data points")
         file = h5py.File(self.save_location, 'w')
         for param in dataCollection.parameters:#type: ignore
-            print("writing", param)
             self.write_parameter(file, param, param.name)
         for datapiece in dataCollection.storedData:
             if type(datapiece) is StorageTensor:
@@ -129,7 +128,6 @@ class IO:
             else: 
                 raise TypeError("Data writing not yet implemented for " + str(type(datapiece)))
         for param in dataCollection.localParameters:#Err, the hdf5 directories might not exist before writing the other data
-            print("writing", param)
             self.write_parameter(file, param, param.name)
         pass
 

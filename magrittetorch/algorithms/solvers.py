@@ -4,8 +4,10 @@ from magrittetorch.model.model import Model
 from magrittetorch.model.geometry.geometry import GeometryType
 from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper
 from magrittetorch.utils.storagetypes import Types
-from magrittetorch.utils.constants import min_opacity, min_optical_depth
+from magrittetorch.utils.constants import min_opacity, min_optical_depth, convergence_fraction, min_rel_pop_for_convergence
 from magrittetorch.model.image import Image, ImageType
+from magrittetorch.tools.radiativetransferutils import relative_error
+
 import torch
 import time
 
@@ -204,7 +206,7 @@ def solve_long_characteristics_single_direction_all_NLTE_freqs(model: Model, ray
     return solve_long_characteristics_single_direction(model, raydir, model_positions, model_velocities, torch.arange(model.parameters.npoints.get()), freqhelper, device)
 
 
-
+# @torch.compile
 def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch.Tensor:
     """Computes the mean line intensity J_ij at every point in the model
 
@@ -224,8 +226,10 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     total_intensity = torch.zeros_like(NLTE_freqs) #dims: [parameters.npoints, NFREQS]
     total_integrated_line_intensity = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo)
     #add everything, with correct contribution
+    starttime = time.time()
     for raydir_index in range(raydirs.shape[0]):
         print("rr:", raydir_index)
+        print(time.time()-starttime)
         #Adding the results immediately, as we will otherwise run out of memory
         total_intensity += weights[raydir_index] * solve_long_characteristics_single_direction(model, raydirs[raydir_index,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
 
@@ -233,9 +237,10 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     # now numerically integrate the intensities of each different line# TODO: check if better option exists, without for loop
     for lineidx in range(model.sources.lines.lineProducingSpecies.length_param.get()):
         lspec = model.sources.lines.lineProducingSpecies[lineidx]
-        quad_weights = lspec.linequadrature.weights.get(device)
+        quad_weights = lspec.linequadrature.weights.get(device)# dims: [NQUADS]
         nfreqs: int = lspec.get_n_lines_freqs()
-        total_integrated_line_intensity[:, lineidx] = torch.sum(quad_weights[None, :] * total_intensity[:,encountered_freqs:encountered_freqs+nfreqs], dim=1)
+        expanded_quad_weights = quad_weights.repeat(lspec.linedata.nrad.get())#needs to be expanded to match the number of frequencies
+        total_integrated_line_intensity[:, lineidx] = torch.sum(expanded_quad_weights[None, :] * total_intensity[:,encountered_freqs:encountered_freqs+nfreqs], dim=1)
 
         encountered_freqs += nfreqs
 
@@ -245,7 +250,7 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     # return solve_long_characteristics_single_direction(model, raydirs[0,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
 
 
-def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device) -> None:
+def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device) -> list[torch.Tensor]:
     """Computes the level populations using the statistical equilibrium equations, given the mean line intensities J
     TODO: also include accelerated lambda iteration, just add (optional) extra functon argument
 
@@ -255,10 +260,12 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         device (torch.device): Device on which to compute
 
     Returns:
-        None
+        The list of updated level populations. Has dims [[parameters.npoints, parameters.nlev] for every line species]
     """
 
+
     total_encountered_lines: int = 0
+    computed_level_pops: list[torch.Tensor] = []
     for linespecidx in range(model.parameters.nlspecs.get()):#every species is assumed to be independent
         lspec = model.sources.lines.lineProducingSpecies[linespecidx]
         linedata = lspec.linedata
@@ -329,20 +336,29 @@ def compute_and_set_level_populations_statistical_equilibrium(model: Model, J: t
         vector[:, nlev-1] = full_abundance[:, lspec.linedata.num.get()]
 
         levelpops: torch.Tensor = torch.linalg.solve(matrix, vector)
-        lspec.population.set(levelpops.to(torch.device("cpu")))#stored stuff should be mapped back to cpu?
-        print(levelpops)
+
+        computed_level_pops.append(levelpops)
         #TODO: actually store the result somewhere
         
         total_encountered_lines+=nlines
 
-    return
+    return computed_level_pops
 
 
+def level_pops_converged(previous_level_pops: torch.Tensor, current_level_pops: torch.Tensor, relative_diff_threshold: float = min_rel_pop_for_convergence, convergence_fraction: float = convergence_fraction) -> bool:
+    print("relative error:", torch.mean(relative_error(previous_level_pops, current_level_pops)).item())
+    print("relative diff threshold:", relative_diff_threshold)
+    print("convergence fraction:", convergence_fraction)
+    print("mean relative error:", torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)))
+    print("converged:", torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
+    return (torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
 
-def compute_level_populations(model: Model, device: torch.device, max_n_iterations: int = 50) -> None:
+
+def compute_level_populations(model: Model, device: torch.device, max_n_iterations: int = 50, use_ng_acceleration: bool = True, max_its_between_ng_accel: int = 8) -> None:
     """
     Computes the level populations of the given model using an iterative approach,
     utilizing the mean line intensities to solve the statistical equilibrium equations.
+    TODO: update this docstring with ng-acceleration
     TODO: implement convergence check, Ng-accel, ALI (in this order)
 
     Args:
@@ -356,11 +372,84 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
     #TODO: check if level pops have converged
     #to make sure that everything is up to date, we infer
     model.dataCollection.infer_data()
-    for i in range(max_n_iterations):
-        print("it: ", i)
-        mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
-        compute_and_set_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
-        model.dataCollection.infer_data()
+    if use_ng_acceleration:
+        relative_diff_default_its: float
+        relative_diff_ng_accel: float
+
+        previous_level_pops: list[torch.Tensor] = [] #dims: [[NUMBER_ITS, parameters.npoints, parameters.nlev] for every line species]
+        last_ng_accelerated_pops: list[torch.Tensor] = [] #dims: [[parameters.npoints, parameters.nlev] for every line species]
+        for linespecidx in range(model.parameters.nlspecs.get()):#initialize for every species
+            previous_level_pops.append(model.sources.lines.lineProducingSpecies[linespecidx].population.get(device).unsqueeze(0))
+            last_ng_accelerated_pops.append(torch.zeros((model.parameters.npoints.get(), model.sources.lines.lineProducingSpecies[linespecidx].linedata.nlev.get()), dtype=Types.LevelPopsInfo, device=device))
+        n_its_in_ng_accel: int = 1
+            
+        for i in range(max_n_iterations):
+            print("it:", i)
+
+            all_species_converged = True
+            relative_diff_default_its = 0.0
+
+            mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
+            computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
+            for lspecidx in range(model.parameters.nlspecs.get()):
+                lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
+                    all_species_converged = False
+                relative_diff_default_its += torch.mean(relative_error(computed_level_pops[lspecidx], lspec.population.get(device))).item()
+                lspec.population.set(computed_level_pops[lspec.linedata.num.get()].to("cpu"))
+                #Add current level pops to previous level pops
+                previous_level_pops[lspec.linedata.num.get()] = torch.cat((previous_level_pops[lspec.linedata.num.get()], computed_level_pops[lspec.linedata.num.get()].unsqueeze(0)), dim=0)
+            n_its_in_ng_accel += 1
+
+            model.dataCollection.infer_data()
+
+            if all_species_converged:
+                break
+
+            relative_diff_ng_accel = 0.0
+            #only start using the acceleration procedure after accumulating 3 iterations
+            if n_its_in_ng_accel >= 3:#TODO: replace with len(previous_level_pops[0])
+
+                for lspecidx in range(model.parameters.nlspecs.get()):
+                    lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                    ng_accel_level_pops = lspec.compute_ng_accelerated_level_pops(previous_level_pops[lspec.linedata.num.get()], device)
+                    relative_diff_ng_accel += torch.mean(relative_error(ng_accel_level_pops, last_ng_accelerated_pops[lspec.linedata.num.get()])).item()
+                    last_ng_accelerated_pops[lspec.linedata.num.get()] = ng_accel_level_pops
+                
+                #Use the ng-accelerated populations, if the difference between ng-accelerated iterations is smaller than the difference between the regular iterations
+                if relative_diff_ng_accel < relative_diff_default_its or n_its_in_ng_accel > max_its_between_ng_accel:
+                    print("Using ng-acceleration; using " + str(n_its_in_ng_accel-1) + " iterations")
+                    #redo convergence checking
+                    all_species_converged = True
+                    for lspecidx in range(model.parameters.nlspecs.get()):
+                        lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                        if not level_pops_converged(lspec.population.get(device), last_ng_accelerated_pops[lspecidx]):
+                            all_species_converged = False
+                        lspec.population.set(last_ng_accelerated_pops[lspec.linedata.num.get()].to("cpu"))
+                    previous_level_pops = [last_ng_accelerated_pops[lspecidx].unsqueeze(0) for lspecidx in range(model.parameters.nlspecs.get())]
+                    n_its_in_ng_accel = 1
+
+                    model.dataCollection.infer_data()
+            
+                    if all_species_converged:
+                        break
+
+    else:
+        for i in range(max_n_iterations):
+            print("it:", i)
+            all_species_converged = True
+            mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
+            computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)#type: ignore
+            for lspecidx in range(model.parameters.nlspecs.get()):
+                lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
+                    all_species_converged = False
+
+                lspec.population.set(computed_level_pops[lspecidx].to("cpu"))
+            model.dataCollection.infer_data()
+            if all_species_converged:
+                break
+            
 
 
 def image_model(model: Model, ray_direction: torch.Tensor, freqs: torch.Tensor, device: torch.device, Nxpix: int = 256, Nypix: int = 256, imageType: ImageType = ImageType.Intensity) -> None:

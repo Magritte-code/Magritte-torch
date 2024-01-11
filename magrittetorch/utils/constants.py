@@ -7,6 +7,8 @@ min_opacity = 1e-100 #for bounding source function from below; assumes 64 bit fl
 min_freq_difference = 1e-100 # assumes 64 bit float for frequency
 min_dist = 1e-100 # assumes 64 bit float for distances
 min_optical_depth = 1e-100 # assumes 64 bit float for optical depth
+min_rel_pop_for_convergence = 1.0e-10 #minimum relative population change for convergence
+convergence_fraction = 0.995 #threshold for converged populations
 
 
 class astropy_const:

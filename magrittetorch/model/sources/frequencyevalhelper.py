@@ -24,14 +24,14 @@ class FrequencyEvalHelper:
         """
         self.lineProducingSpecies = listlspec
         self.original_frequencies = frequencies
-        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, >=NLSPECS*NFREQS]
-        self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies
-        self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies
+        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, probably>=NFREQS]
+        self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [probably>=NFREQS]
+        self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [probably>=NFREQS]
         self.deduce_close_lines(frequencies, model_velocities, device)
         self.device = device
 
     def deduce_close_lines(self, base_frequencies: torch.Tensor, model_velocities: torch.Tensor, device: torch.device) -> None:
-        """Infers which lines lie close enough to each frequency and sets the internal data accordingly. TODO: FIX crash in multiarange if no lines lie nearby for any frequencies
+        """Infers which lines lie close enough to each frequency and sets the internal data accordingly.
 
         Args:
             base_frequencies (torch.Tensor): Non-shifted frequencies to use for all positions. Has dimensions [NPOINTS, NFREQS]
@@ -44,6 +44,11 @@ class FrequencyEvalHelper:
             minids, maxids = lspec.get_global_bound_relevant_line_indices(base_frequencies[0, :], max_shift, device)
             self.duplicated_frequencies.append(base_frequencies.repeat_interleave(maxids-minids, dim=1))
             self.original_frequency_index.append(torch.arange(nfreqs, device=device).repeat_interleave(maxids-minids))
-            self.corresponding_lines.append(multi_arange(minids, maxids-minids, device))
+            # If no lines are found, the multi_arange will crash. As that snippet of code should be optimized (so no adding if-clauses), it is better to create a workaround here.
+            # We just manually set the corresponding lines to empty in that case.
+            if torch.all(minids == maxids):
+                self.corresponding_lines.append(torch.empty((0), device=device, dtype=Types.IndexInfo))
+            else:
+                self.corresponding_lines.append(multi_arange(minids, maxids-minids, device))
 
         

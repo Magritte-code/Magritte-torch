@@ -34,11 +34,9 @@ class CollisionPartner:
             The abundance is unchanged for other species
         """
         if self.orth_or_para_H2.get() != "n":
-            #See https://en.wikipedia.org/wiki/Spin_isomers_of_hydrogen
-            #Formula originates from standard thermodynamic partition functions (as in the wikipedia article)
-            #rotation temperature of H2 is 87.6 K according to: P. Atkins and J. de Paula, Physical Chemistry", 9th edition (W.H. Freeman 2010), Table 13.2 in appendix Data section
-            #Approximately twice the value of the rotation temperature is used in the exponent below
-            frac_H2_para = 1.0/(1.0 + 9.0 * torch.exp(-175.0/temperature))
+            #See erratum on Flower 1984, https://ui.adsabs.harvard.edu/abs/1985MNRAS.213..991F/abstract
+            #There exists both nuclear spin degeneracy and rotational angular momentum degeneracy, both accounting for a factor of 3
+            frac_H2_para = 1.0/(1.0 + 9.0 * torch.exp(-170.5/temperature))
             if self.orth_or_para_H2.get() == "o":
                 return abundance * (1.0 - frac_H2_para)
             elif self.orth_or_para_H2.get() == "p":

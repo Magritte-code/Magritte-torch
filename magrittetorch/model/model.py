@@ -40,7 +40,7 @@ class Model:
         self.images: List[Image] = []
 
     def write(self) -> None:
-        print("writing")
+        print("Writing model to: ", self.io.save_location)
         self.io.write(self.dataCollection)
 
     def read(self, legacy_mode: bool = False) -> None:

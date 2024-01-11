@@ -20,22 +20,27 @@ classifiers = [
 ]
 keywords = ["Astrophysics", "Astronomy"]
 dependencies = [
-    "matplotlib",
-    "astroquery",
-    "ipywidgets",
-    "astropy",
-    "torch>=2.0.0",
-    "numpy",
-    "tqdm",
-    "h5py",
-    "scipy",
-    "plotly",
-    "palettable"
+    "matplotlib", # for plotting
+    "astroquery", # for downloading data
+    "ipywidgets", # for interactive plots
+    "astropy", # for units, io of astronomy fileformats
+    "torch>=2.0.0", # pytorch
+    "numpy", # numpy
+    "tqdm", # for progress bars
+    "h5py", # for saving data in hdf5 format
+    "scipy", # for interpolation
+    "plotly", # for visualization
+    "palettable", # for color maps
+    "psutil", # for checking memory usage
+    "yt",   # visualization
+    "ipykernel", # for jupyter notebooks
+    "healpy", #angular discretization
 ]
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
 dev = ["black", "pip-tools", "pytest"]
+docs = ["sphinx", "breathe", "sphinx_copybutton", "nbsphinx", "sphinx_rtd_theme", "pandoc"]
 
 [project.urls]
 Homepage = "https://github.com/Magritte-code/Magritte-torch"
