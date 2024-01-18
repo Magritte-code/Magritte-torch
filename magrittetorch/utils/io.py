@@ -30,7 +30,7 @@ class IO:
         file = h5py.File(self.save_location, 'r')
         parameter : Parameter[Any]
         if legacy_mode:#in legacy mode, data can be saved at different locations
-            print("reading legacy model")
+            print("Reading Magritte model")
             try_read_again_parameters: MutableSet[Parameter[Any]] = set()
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.legacy_name)
@@ -41,7 +41,7 @@ class IO:
                 for localParameter in dataCollection.localParameters:
                     #TODO: reading every local parameter again is inefficient; keep track of currently read parameter/not yet read parameters
                     try:
-                        print(localParameter, localParameter.legacy_name)
+                        # print(localParameter, localParameter.legacy_name)
                         self.read_parameter(file, localParameter, localParameter.legacy_name, localParameter.legacy_conversion_function)
                     except Exception as e:
                         print(e)
@@ -69,13 +69,15 @@ class IO:
                         if inferredDatapiece.legacy_conversion_function is not None: legacy_data_torch = inferredDatapiece.legacy_conversion_function(legacy_data_torch)
                         inferredDatapiece.set(legacy_data_torch)
                     except TypeError as e:
-                        print(e)#inferred data might not be set
+                        # print(e)#inferred data might not be set; this is not an error
+                        # It will complain about reading numpy.object thing, which cannot be converted to any useful datatype
+                        pass
 
         else:#non-legacy mode reading
+            print("Reading Magrittetorch model")
             for parameter in dataCollection.parameters:
                 self.read_parameter(file, parameter, parameter.name)
             for localParameter in dataCollection.localParameters:
-                print("reading", localParameter.name)
                 self.read_parameter(file, localParameter, localParameter.name)
             #read all delayed lists; Dev Note: the storedData list might get appended during reading the delayedLists
             for delayedlist in dataCollection.delayedLists:
@@ -103,7 +105,9 @@ class IO:
                     try:
                         inferredDatapiece.set(self.read_torch(file, inferredDatapiece.relative_storage_location))
                     except TypeError as e:
-                        print(e)#inferred data might not be set
+                        # print(e)#inferred data might not be set; this is not an error
+                        # It will complain about reading numpy.object thing, which cannot be converted to any useful datatype
+                        pass
 
     def write(self, dataCollection : DataCollection) -> None:
         """Write all stored values from a given DataCollection to hdf5 format
@@ -129,6 +133,11 @@ class IO:
                 raise TypeError("Data writing not yet implemented for " + str(type(datapiece)))
         for param in dataCollection.localParameters:#Err, the hdf5 directories might not exist before writing the other data
             self.write_parameter(file, param, param.name)
+        # Some pieces of inferred data need also to be written (eg: NLTE level populations)
+        for inferredDatapiece in dataCollection.inferredData:
+            if inferredDatapiece.relative_storage_location is not None:
+                if inferredDatapiece.is_complete():
+                    self.write_torch(file, inferredDatapiece.relative_storage_location, inferredDatapiece.get())
         pass
 
     def read_numpy(self, file : h5py.File, dataset_name : str) -> np.ndarray[Any, Any]:

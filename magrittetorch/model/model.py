@@ -40,11 +40,18 @@ class Model:
         self.images: List[Image] = []
 
     def write(self) -> None:
+        """Writes the model to the save location
+        """
         print("Writing model to: ", self.io.save_location)
         self.io.write(self.dataCollection)
 
     def read(self, legacy_mode: bool = False) -> None:
-        print("reading")
+        """Reads the model from the save location
+
+        Args:
+            legacy_mode (bool, optional): If False, reads a Magrittetorch model. If True, reads a Magritte model. Defaults to False.
+        """
+        print("Reading model from: ", self.io.save_location)
         self.io.read(self.dataCollection, legacy_mode)
 
     def get_boundary_intensity(self, point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
