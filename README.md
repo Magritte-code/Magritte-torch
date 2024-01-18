@@ -8,7 +8,7 @@ Magrittetorch is currently mainly used for post-processing hydrodynamical simula
 Magrittetorch can be used for 3D (N)LTE line radiative transfer and imaging. The software library supports both CPU and GPU parallelization, using pytorch as backend. Model input can be done using astropy Quantities to allow for effortless unit conversions.
 
 # Documentation
-The documentation of Magrittetorch can be found at TODO add readthedocs url, but is still a work in progress.
+The documentation of Magrittetorch can be found [here](https://magritte-torch.readthedocs.io), but is still a work in progress.
 As Magrittetorch is a port, one of its goals is to reuse the significant parts of the API of [Magritte](https://github.com/Magritte-code/Magritte), to allow for seamless transition to this library. Take a look at the [documentation](https://magritte.readthedocs.io) of Magritte instead for now.
 
 # Performance comparison
