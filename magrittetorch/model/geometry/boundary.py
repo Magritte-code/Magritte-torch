@@ -106,7 +106,7 @@ class Boundary:
                 positions_device = self.dataCollection.get_data("position").get(device)#type: ignore
                 is_boundary_copy = self.is_boundary_point.get(device).clone()
                 full_boundary_positions = positions_device[is_boundary_copy,:]
-                incorrect_boundary = torch.sum((full_boundary_positions - self.center.get(device)[None, :]) * direction[None, :], dim=1)<=0
+                incorrect_boundary = torch.matmul(full_boundary_positions - self.center.get(device)[None, :], direction)<=0.0
                 is_boundary_copy[self.boundary2point.get(device)[incorrect_boundary]] = False
                 return is_boundary_copy
             case BoundaryType.AxisAlignedCube:

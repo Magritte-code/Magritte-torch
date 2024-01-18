@@ -40,10 +40,13 @@ class Image:
         # self.pixX: StorageTensor = StorageTensor(Types.GeometryInfo, [self.nxpix], units.m, self.storage_dir+"pixX")
         # self.pixY: StorageTensor = StorageTensor(Types.GeometryInfo, [self.nypix], units.m, self.storage_dir+"pixY")
 
+        # Note: I saves the image data; for most images, this is the intensity, but it can also be the optical depth
+        # Thus the units might need be changed manually when setting the image type...
+        # Note2: As images are currently not saved in a hdf5 file, we do not yet need to store the unit of the image data
         self.I: StorageTensor = StorageTensor(Types.FrequencyInfo, [self.npix, self.nfreqs], units.W*units.m**-2*units.Hz**-1*units.sr**-1, self.storage_dir+"I")#; self.dataCollection.add_data(self.I, "intensity")
 
     #TODO: add option for imaging limited region
-    def setup_image(self, geometry: Geometry, Nxpix: int, Nypix: int) -> None:
+    def setup_image(self, geometry: Geometry, Nxpix: int, Nypix: int, image_type: ImageType = ImageType.Intensity) -> None:
         """
         Sets up the image coordinate system based on the ray direction and the geometry of the model
 
@@ -51,28 +54,50 @@ class Image:
             geometry (Geometry): The geometry of the model.
             Nxpix (int): The number of pixels in the x-direction.
             Nypix (int): The number of pixels in the y-direction.
+            image_type (ImageType, optional): The type of image to compute. Determines the unit of the image data. Defaults to ImageType.Intensity.
 
         Returns:
             None
         """
+        # Set the image data unit correctly
+        match image_type:
+            case ImageType.Intensity:
+                self.I.unit = units.W*units.m**-2*units.Hz**-1*units.sr**-1
+            case ImageType.OpticalDepth:
+                self.I.unit = units.dimensionless_unscaled
+            case _:
+                raise NotImplementedError("Image type not implemented")
+
         raydir: torch.Tensor = self.ray_direction.get() #dims: [3]
         # Compute the rotation angles alpha and beta
-        alpha = torch.atan2(raydir[0], raydir[2])
-        beta = torch.atan2(raydir[1], torch.sqrt(raydir[0]**2 + raydir[2]**2))
+        alpha = torch.atan2(raydir[0], raydir[1])
+        beta = torch.atan2(-raydir[2], torch.sqrt(raydir[0]**2 + raydir[1]**2))
 
-        # Compute the rotation matrices
-        rot_y = torch.tensor([[torch.cos(alpha), 0.0, torch.sin(alpha)],
-                            [0.0, 1.0, 0.0],
-                            [-torch.sin(alpha), 0.0, torch.cos(alpha)]], dtype=Types.GeometryInfo)
-        rot_x = torch.tensor([[1.0, 0.0, 0.0],
+        # Compute the rotation matrices ()
+        rot_x = torch.tensor([[torch.cos(alpha), torch.sin(alpha), 0.0],
+                            [-torch.sin(alpha), torch.cos(alpha), 0.0],
+                            [0.0, 0.0, 1.0]], dtype=Types.GeometryInfo)
+        
+        rot_y = torch.tensor([[1.0, 0.0, 0.0],
                             [0.0, torch.cos(beta), torch.sin(beta)],
                             [0.0, -torch.sin(beta), torch.cos(beta)]], dtype=Types.GeometryInfo)
 
-        rot = torch.matmul(rot_x, rot_y)
-        # Compute the image directions
+        rot = torch.matmul(rot_x, rot_y)    
+
+        # Compute the rotation matrices
+        # rot_x = torch.tensor([[torch.cos(alpha), 0.0, torch.sin(alpha)],
+        #                     [0.0, 1.0, 0.0],
+        #                     [-torch.sin(alpha), 0.0, torch.cos(alpha)]], dtype=Types.GeometryInfo)
+        # rot_y = torch.tensor([[1.0, 0.0, 0.0],
+        #                     [0.0, torch.cos(beta), torch.sin(beta)],
+        #                     [0.0, -torch.sin(beta), torch.cos(beta)]], dtype=Types.GeometryInfo)
+
+        # rot = torch.matmul(rot_x, rot_y)
+
+        # Compute the image directions #Note: this set of rotations is not unique, but it is the one used in the original magritte 
         self.image_direction_x.set(torch.matmul(rot, torch.tensor([1.0, 0.0, 0.0], dtype=Types.GeometryInfo)))
-        self.image_direction_y.set(torch.matmul(rot, torch.tensor([0.0, 1.0, 0.0], dtype=Types.GeometryInfo)))
-        self.image_direction_z.set(torch.matmul(rot, torch.tensor([0.0, 0.0, 1.0], dtype=Types.GeometryInfo)))
+        self.image_direction_y.set(torch.matmul(rot, torch.tensor([0.0, 0.0, -1.0], dtype=Types.GeometryInfo)))
+        self.image_direction_z.set(torch.matmul(rot, torch.tensor([0.0, 1.0, 0.0], dtype=Types.GeometryInfo)))
 
         if (geometry.geometryType.get() == GeometryType.General3D):
             coords = geometry.points.position.get()
@@ -118,7 +143,7 @@ class Image:
         """
         if (geometry.geometryType.get() != GeometryType.General3D):
             raise AssertionError("This method can only be called for general 3D geometries")
-        raydir: torch.Tensor = self.ray_direction.get() #dims: [3]
+        raydir: torch.Tensor = self.ray_direction.get(device) #dims: [3]
         positions_device = geometry.points.position.get(device) #dims: [parameters.npoints, 3]
         #start at the reverse direction boundary
         boundary_boolean = geometry.boundary.get_boundary_in_direction(-raydir, device) #dims: [parameters.npoints]

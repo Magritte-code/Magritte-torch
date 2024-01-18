@@ -131,6 +131,7 @@ def image_mpl(
     velos = (f_ij - freqs) / f_ij * constants.c
 
     # Interpolate the scattered data to an image (regular grid)
+    # Euhm, the units are not preserved here, so I have to add them back in; for optical depths, these are the wrong units, though the units will not be used for anything
     Is = np.zeros((nfreqs)) * units.W / units.m**2 / units.sr / units.Hz
     zs: Quantity = np.zeros((nfreqs, npix_x, npix_y)) * units.W / units.m**2 / units.sr / units.Hz
     for f in range(nfreqs):
@@ -309,6 +310,7 @@ def image_plotly(
     velos = (f_ij - freqs) / f_ij * constants.c
 
     # Interpolate the scattered data to an image (regular grid)
+    # Euhm, the units are not preserved here, so I have to add them back in; for optical depths, these are the wrong units, though the units will not be used for anything
     Is = np.zeros((nfreqs)) * units.W / units.m**2 / units.sr / units.Hz
     zs: Quantity = np.zeros((nfreqs, npix_x, npix_y)) * units.W / units.m**2 / units.sr / units.Hz
     for f in range(nfreqs):

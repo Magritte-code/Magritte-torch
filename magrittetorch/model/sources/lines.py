@@ -97,7 +97,6 @@ class Lines:
             #TODO: define param somewhere else
             small_shift = torch.abs(curr_shift-prev_shift)<MAX_VELOCITY_DIFFERENCE*lspec.relative_line_width.get(device)[curr_point_indices]
             large_shift = torch.logical_not(small_shift)
-            # print("large shift", large_shift, curr_shift - prev_shift, lspec.relative_line_width.get(device)[curr_point_indices])
             #For a small shift, we can just multiply average opacity with distance to obtain the optical depth
             line_optical_depth = ((curr_opacity+prev_opacity)[:, freqhelper.original_frequency_index[i]]*distance_increments[:, None]*0.5)#dims: [NPOINTS, n_eval_freqs]
             #For a large shift, we analytically integrate the line profile function of an averaged line width
