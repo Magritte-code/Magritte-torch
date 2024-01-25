@@ -50,6 +50,7 @@ class LineProducingSpecies:
         non_normalized_pops = torch.reshape(self.linedata.weight.get(), (1,-1)) * torch.exp(-torch.reshape(self.linedata.energy.get(), (1,-1)) / (astropy.constants.k_B.value * torch.reshape(self.dataCollection.get_data("gas temperature").get(), (-1,1))))#type: ignore
         return torch.reshape(self.population_tot.get(), (-1,1)) * non_normalized_pops / torch.sum(non_normalized_pops, dim = 1).reshape(-1,1)
 
+
     def _infer_population_tot(self) -> torch.Tensor:
         return self.dataCollection.get_data("species abundance").get()[:,self.linedata.num.get()]#type: ignore
     
