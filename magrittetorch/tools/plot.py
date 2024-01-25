@@ -543,6 +543,174 @@ def image_plotly(
     return fig.show(config=config)
 
 
+def image_channel(
+        model: Model,
+        channels: list[int],
+        figure_size: tuple[int, int], # (width, height), product should be equal to len(channels)
+        image_nr   =  -1,
+        zoom       = 1.3,
+        npix_x     = 200,
+        npix_y     = 200,
+        x_unit     = units.au,
+        v_unit     = units.km/units.s,
+        x_ticks    = None,
+        y_ticks    = None,
+        method     = 'nearest'
+):
+    """Creates a single image of channel maps plotted next to each other, with the line profile below.
+
+    Args:
+        model (_type_): The Magrittetorch model object.
+        channels (list[int]): The channels to plot
+        figure_size (tuple[int, int]): Number of columns, rows to use for channel maps. product should be equal to len(channels)
+        image_nr (int, optional): Image number to plot. Defaults to -1.
+        zoom (float, optional): Zoom level. Defaults to 1.3.
+        npix_x (int, optional): Number of pixels in x direction. Defaults to 300.
+        npix_y (int, optional): Number of pixels in y direction. Defaults to 300.
+        x_unit (_type_, optional): Units for position coordinate. Defaults to units.au.
+        v_unit (_type_, optional): Units for velocity coordinate. Defaults to units.km/units.s.
+        x_ticks (float, optional): Ticks for x-axis in x_unit units. Default to 'None', in which case the automatic matplotlib ticks are used.
+        y_ticks (float, optional): Ticks for y-axis in x_unit units. Default to 'None', in which case the automatic matplotlib ticks are used.
+        method (str, optional): Interpolation method. Defaults to 'nearest'.
+    """
+    if (len(model.images) < 1):
+        print('No images in model.')
+        return
+    if (figure_size[0]*figure_size[1] != len(channels)):
+        print('Figure size does not match number of channels.')
+        return
+    
+    # Get path of image directory
+    im_dir = os.path.dirname(os.path.abspath(model.io.save_location)) + '/images/'
+
+    # If no image directory exists yet
+    if not os.path.exists(im_dir):
+        # Create image directory
+        os.makedirs(im_dir)
+        print('Created image directory:', im_dir)
+
+    # Extract data of last image
+    imx = model.images[image_nr].imX.get_astropy() #dims: [image.npix]       
+    imy = model.images[image_nr].imY.get_astropy() #dims: [image.npix]
+    imI = model.images[image_nr].I.get_astropy() #dims: [image.npix, image.nfreqs]
+
+    # # Workaround for model images
+    # if (model.images[image_nr].imagePointPosition == ImagePointPosition.AllModelPoints):
+    #     # Filter imaging data originating from boundary points
+    #     bdy_indices = np.array(model.geometry.boundary.boundary2point)
+    #     imx = np.delete(imx, bdy_indices)
+    #     imy = np.delete(imy, bdy_indices)
+    #     imI = np.delete(imI, bdy_indices, axis=0)
+
+    # Extract the number of frequency bins
+    nfreqs = model.images[image_nr].nfreqs.get()
+
+    # Set image boundaries
+    deltax = (np.max(imx) - np.min(imx))/zoom
+    midx = (np.max(imx) + np.min(imx))/2.0
+    deltay = (np.max(imy) - np.min(imy))/zoom
+    midy = (np.max(imy) + np.min(imy))/2.0
+
+    x_min, x_max = midx - deltax/2.0, midx + deltax/2.0
+    y_min, y_max = midy - deltay/2.0, midy + deltay/2.0
+
+    # Create image grid values
+    xs = np.linspace(x_min, x_max, npix_x)
+    ys = np.linspace(y_min, y_max, npix_y)
+
+    # Extract the spectral / velocity data
+    freqs = model.images[image_nr].freqs.get_astropy() #dims: [image.nfreqs]
+    f_ij  = np.mean(freqs)
+    velos = (f_ij - freqs) / f_ij * constants.c.to(v_unit)
+
+    # Interpolate the scattered data to an image (regular grid)
+    # Euhm, the units are not preserved here, so I have to add them back in; for optical depths, these are the wrong units, though the units will not be used for anything
+    Is = np.zeros((nfreqs)) * units.W / units.m**2 / units.sr / units.Hz
+    zs: Quantity = np.zeros((nfreqs, npix_x, npix_y)) * units.W / units.m**2 / units.sr / units.Hz
+    for f in range(nfreqs):
+        # Nearest neighbor interpolate scattered image data
+        zs[f] = griddata(
+            (imx, imy),
+            imI[:,f],
+            (xs[None,:], ys[:,None]),
+            method=method,
+            fill_value = 0.0 #for non-nearest neighbor interpolation, otherwise the ceil/floor functions will complain
+        ) * units.W / units.m**2 / units.sr / units.Hz # This scipy function does not preserve the units
+        Is[f] = np.sum(zs[f])
+    Is = Is / np.max(Is)
+
+    # Put zero/negative values to the smallest positive value
+    zs[zs<=0.0] = np.min(zs[zs>0.0])
+    # Put nan values to smallest positive value
+    zs[np.isnan(zs)] = np.min(zs[zs>0.0])
+
+    # Get the logarithm of the data (matplotlib has a hard time handling logarithmic data.)
+    log_zs     = np.log10(zs.value)
+    log_zs_min = np.min(log_zs)
+    log_zs_max = np.max(log_zs)
+
+    lzmin = ceil (log_zs_min)
+    lzmax = floor(log_zs_max)
+
+    lz_25 = ceil (log_zs_min + 0.25*(log_zs_max - log_zs_min))
+    lz_50 = ceil (log_zs_min + 0.50*(log_zs_max - log_zs_min))
+    lz_75 = floor(log_zs_min + 0.75*(log_zs_max - log_zs_min))
+
+    ticks  = [lzmin, lz_25, lz_50, lz_75, lzmax]
+    levels = np.linspace(log_zs_min, log_zs_max, 250)
+
+    colorbarwidth = 0.05
+    lineprofileheight = 1.0
+
+    fig = plt.figure(figsize = (1.5*(figure_size[1]+colorbarwidth),1.5*(figure_size[0]+lineprofileheight)), dpi=300)
+    colorbarsplit = fig.subfigures(1,2, width_ratios=[1, colorbarwidth], wspace=0)
+    colorbarsplitrelevant = colorbarsplit[1].subfigures(2,1, height_ratios=[figure_size[1],lineprofileheight], hspace = 0)
+    colorbarax = colorbarsplitrelevant[0].subplots(1,1)
+    subfigs = colorbarsplit[0].subfigures(2, 1, height_ratios=[figure_size[0], 1], hspace = 0.0)
+    channelmapsfig = subfigs[0].subplots(figure_size[0], figure_size[1], sharex=True, sharey=True)
+    subfigs[0].subplots_adjust(wspace = 0.05, hspace = 0.05)
+    if type(channelmapsfig)==np.ndarray:
+        channelmapsfig = channelmapsfig.flatten()
+    lineprofilefig = subfigs[1].subplots(1, 1)
+
+    for f in range(len(channels)):
+        im = channelmapsfig[f].contourf(
+            xs.to(x_unit),
+            ys.to(x_unit),
+            log_zs[channels[f]],
+            cmap=cubehelix2_16.mpl_colormap,
+            levels=levels
+        )
+        lineprofilefig.axvline(velos[channels[f]].to(v_unit).value, linestyle=':', color='r')
+        channelmapsfig[f].text(0.07,0.07,f'{velos[channels[f]].to(v_unit).value:.2f} '+str(v_unit), transform = channelmapsfig[f].transAxes, color='white')
+        if x_ticks is not None:
+            channelmapsfig[f].xaxis.set_ticks(x_ticks)
+        if y_ticks is not None:
+            channelmapsfig[f].yaxis.set_ticks(y_ticks)
+
+    #now also plot the line profile
+    lineprofilefig.plot(velos, Is/max(Is))
+    #and some indicators of the line profile
+    lineprofilefig.axvline(min(velos[channels].to(v_unit).value), color='r')
+    lineprofilefig.axvline(max(velos[channels].to(v_unit).value), color='r')
+    subfigs[1].supxlabel(f'velocity [{str(v_unit)}]', y = -0.20)
+
+    #also add the figure axes
+    subfigs[0].supxlabel(f'X [{str(x_unit)}]', y = 0.03)
+    subfigs[0].supylabel(f'Y [{str(x_unit)}]')
+    subfigs[0].suptitle("Intensity [W m$^{-2}$ sr$^{-1}$ Hz$^{-1}$]", y = 0.95)
+    subfigs[1].suptitle("Relative intensity", y = 1.01)
+    # Fix the colorbar ticks, as we plot the logarithm of the data
+    cbar = fig.colorbar(im, cax=colorbarax)
+    cbarticks = np.arange(lzmin, lzmax+1)
+    cbar.ax.set_yticks(cbarticks)
+    cbar.ax.set_yticklabels([f'{10**float(str(t)):.0e}' for t in cbarticks])
+
+    return fig
+
+
+
+
 def plot_velocity_1D(model: Model, xscale: str='log', yscale: str='linear'):
     """
     Plot the velocity profile of the model (in 1D, radially).
