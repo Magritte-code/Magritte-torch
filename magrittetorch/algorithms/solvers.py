@@ -132,15 +132,15 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
     prev_opacities, starting_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, prev_shift, freqhelper, device) #dims: [NPOINTS, NFREQS]
     prev_source_function = starting_emissivities/(prev_opacities+min_opacity) #dims: [NPOINTS, NFREQS]
 
+    #when encountering boundary points, add their intensity contribution
+    #evaluate boundary intensity
+    #technically boundary_indices
+    computed_intensity[boundary_mask] = model.get_boundary_intensity(boundary_indices, freqhelper, prev_shift[boundary_mask], device) #dims: [NPOINTS, NFREQS]
+
     #already mask previous values
     prev_opacities = prev_opacities[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
     prev_source_function = prev_source_function[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
     prev_shift = prev_shift[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS]
-
-    #when encountering boundary points, add their intensity contribution
-    #evaluate boundary intensity
-    #technically boundary_indices
-    computed_intensity[boundary_mask] = model.get_boundary_intensity(boundary_indices, freqhelper, device) #dims: [NPOINTS, NFREQS]
 
     while (torch.any(mask_active_rays)):
         #continuously subset the tensors, reducing time needed to access the relevant subsets
@@ -180,7 +180,7 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
 
         #and add boundary intensity to the rays which have ended, taking into account the current extincition factor e^-tau
         ended_rays = torch.logical_not(mask_active_rays)
-        computed_intensity[data_indices[ended_rays]] += model.get_boundary_intensity(curr_ids[ended_rays], freqhelper, device) * torch.exp(-sum_optical_depths[data_indices[ended_rays]])
+        computed_intensity[data_indices[ended_rays]] += model.get_boundary_intensity(curr_ids[ended_rays], freqhelper, doppler_shift[ended_rays], device) * torch.exp(-sum_optical_depths[data_indices[ended_rays]])
 
     return computed_intensity
 
