@@ -1,0 +1,45 @@
+#separated, as a failed build on a pr should not impact the current status badge
+name: Build and test on pull request
+on:
+  pull_request:
+    branches: [ stable ]
+jobs:
+  #Before testing the code, make sure that it is linted properly
+  #Still todo: decide on a formatting style for python code
+  # run-linters:
+  #   name: Run linters
+  #   runs-on: ubuntu-latest
+
+  InstallAndTest:
+    # needs: run-linters
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python-version: [3.9, 3.10]
+
+    defaults:
+      run:
+        shell: bash -l {0} #necessary for conda
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # TODO? install CUDA? if we every want to test on GPU
+      # For now, github actions does not yet publicly offer GPU compute (and I don't expect it to be in the free tier any time soon)
+
+      - name: Install magrittetorch
+        run: pip install .
+        working-directory: magrittetorch
+
+      #and finally do our tests (located in the benchmarks folder)
+      - name: run analytic tests
+        run: pytest --verbose
+        working-directory: tests/benchmarks/analytic
+      # Numeric tests still TODO
+      # - name: run numeric tests
+      #   run: pytest --verbose
+      #   working-directory: tests/benchmarks/numeric
