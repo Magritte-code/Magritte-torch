@@ -78,8 +78,12 @@ class StorageTensor():
             astropy_array (units.Quantity): _description_
 
         Raises:
+            TypeError: when the input is not an astropy Quantity
             astropy.units.core.UnitConversionError: when the units are incompatible
         """
+        #check if astropy_quantity is a Quantity
+        if not isinstance(astropy_quantity, units.Quantity):
+            raise TypeError("The given input is not an astropy Quantity")
         self.set(torch.from_numpy(np.array(astropy_quantity.to(self.unit))))
         
     def set(self, tensor : torch.Tensor) -> None:
@@ -219,8 +223,11 @@ class InferredTensor():
             astropy_array (units.Quantity): _description_
 
         Raises:
+            TypeError: when the input is not an astropy Quantity
             astropy.units.core.UnitConversionError: when the units are incompatible
         """
+        if not isinstance(astropy_quantity, units.Quantity):
+            raise TypeError("The given input is not an astropy Quantity")
         self.set(torch.from_numpy(np.array(astropy_quantity.to(self.unit))))
         
     def set(self, tensor : torch.Tensor) -> None:
@@ -383,8 +390,11 @@ class StorageNdarray():
             astropy_array (units.Quantity): _description_
 
         Raises:
+            TypeError: when the input is not an astropy Quantity
             astropy.units.core.UnitConversionError: when the units are incompatible
         """
+        if not isinstance(astropy_quantity, units.Quantity):
+            raise TypeError("The given input is not an astropy Quantity")
         self.set(np.array(astropy_quantity.to(self.unit)))
         
     def set(self, array : np.ndarray[Any, Any]) -> None:

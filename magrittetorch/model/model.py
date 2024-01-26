@@ -54,17 +54,17 @@ class Model:
         print("Reading model from: ", self.io.save_location)
         self.io.read(self.dataCollection, legacy_mode)
 
-    def get_boundary_intensity(self, point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
+    def get_boundary_intensity(self, point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, doppler_shift: torch.Tensor, device: torch.device) -> torch.Tensor:
         """Computes the boundary intensity for the given boundary points and frequencies
 
         Args:
             point_indices (torch.Tensor): Indices of the boundary points. Has dimensions [NPOINTS]
             freqhelper (FrequencyEvalHelper): Frequencies to evaluate. Has dimensions [NPOINTS, NFREQS]
+            doppler_shift (torch.Tensor): Doppler shift with respect to the boundary points. Has dimensions [NPOINTS]
             device (torch.device): Device on which to compute and return the result
 
         Returns:
             torch.Tensor: The boundary intensity. Has dimensions [NPOINTS, NFREQS]
         """
         #I need both frequency info (contained within sources) and boundary info, so this function goes in model
-        #TODO: add doppler shift, as the boundary condition slightly depends on the frequency
-        return self.geometry.boundary.get_boundary_intensity(point_indices, freqhelper.original_frequencies[point_indices,:], device)
+        return self.geometry.boundary.get_boundary_intensity(point_indices, freqhelper.original_frequencies[point_indices,:]*doppler_shift[:, None], device)

@@ -53,40 +53,25 @@ def create_model ():
     model = magritte.Model(modelFile)
     model.geometry.geometryType.set(GeometryType.General3D)
     model.geometry.boundary.boundaryType.set(BoundaryType.AxisAlignedCube)
-    # model.parameters.set_spherical_symmetry(False)
-    # model.parameters.set_model_name        (modelFile)
-    # model.parameters.set_dimension         (dimension)
-    # model.parameters.npoints.set(npoints)
-    # model.parameters.nrays.set(nrays)
-    # model.parameters.nspecs.set(nspecs)
-    # model.parameters.nlspecs.set(nlspecs)
-    # model.parameters.nquads            (nquads)
 
     model.geometry.points.position.set_astropy([[i, 0, 0] for i in range(npoints)]*dx)
     model.geometry.points.velocity.set_astropy([[i, 0, 0] for i in range(npoints)]*dv)
-    print([nTT, nH2, 0.0 * units.m**-3])
     model.chemistry.species.abundance.set_astropy([[nTT*units.m**3, nH2*units.m**3, 0.0] for _ in range(npoints)]*units.m**-3)
     model.chemistry.species.symbol.set(np.array(['test', 'H2', 'e-'], dtype='S'))
 
     model.thermodynamics.temperature.gas.set_astropy(temp * np.ones(npoints))
     model.thermodynamics.turbulence.vturb.set_astropy(turb * np.ones(npoints))
 
-    #TODO: add auto neighbor set in 1D, boundary set, boundary condition set
-
     model = setup.set_Delaunay_neighbor_lists (model)
     model = setup.set_Delaunay_boundary       (model)
     model = setup.set_boundary_condition_CMB  (model)
-    #TODO: add auto ray set, linedata set, quadrature set
     model = setup.set_uniform_rays            (model, nrays)
     model = setup.set_linedata_from_LAMDA_file(model, lamdaFile)
     model = setup.set_quadrature              (model, nquads)
-    model.dataCollection.infer_data()
 
     model.write()
 
-    print("ncolpar", model.sources.lines.lineProducingSpecies[0].linedata.ncolpar.get())
-
-    return #magritte.Model (modelFile)
+    return 
 
 
 def run_model (nosave=False):
@@ -171,8 +156,6 @@ def run_model (nosave=False):
         plt.xlabel('r [m]')
         plt.ylabel('Mean intensity [W/m$^{2}$]')
         plt.savefig(f'{resdir}{modelName}-{timestamp}.png', dpi=150)
-
-        print(u_(x), J_0s[0,:,0], src, chi * dx * (npoints-1), chi*dx)
 
 
     #error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.

@@ -1,0 +1,106 @@
+# Connected to the status badge
+name: Build
+on:
+  push:
+    branches: [ main ]
+jobs:
+#Before doing anything, make sure that the code is linted
+  # run-linters:
+  #   name: Run linters
+  #   runs-on: ubuntu-latest
+
+  #   steps:
+  #     - name: Check out Git repository
+  #       uses: actions/checkout@v3
+
+  #     - name: Install ClangFormat
+  #       run: sudo apt-get install -y clang-format
+
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v4
+
+  #     - name: Install Python dependencies
+  #       run: pip install black flake8
+
+  #     - name: Run cpp linter
+  #       uses: wearerequired/lint-action@v2
+  #       with:
+  #         auto_fix: true
+  #         clang_format: true
+  #         clang_format_extensions: "c,cc,cpp,h,hpp,tpp"
+  #         clang_format_dir: "src/"
+  #         clang_format_auto_fix: true
+  #         # black: true 
+  #         # black_extensions: "py"
+  #         # black_dir: #ignoring python formatting for now, as the github action does not support multiple directories
+  #         #   -"src/"
+  #         #   -"tests/"
+  #         #   -"magritte/"
+  #         #   -"docs/"
+  #         # black_auto_fix: true
+
+#Before testing, we increase the version number. Otherwise, some delay (>30 mins) may occur between updating the code and doing the version increase.
+  UpdateVersion:
+    #TODO change this action to use a default github action
+    # needs: run-linters
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.ref }} #err, version.txt file should not be linted; but still checking out latest commit to be sure
+      - name: Update version (locally) using commit message to determine version increase
+        run: echo "NewVersion=$(python updateVersion.py "${{github.event.head_commit.message}}")" >> $GITHUB_ENV
+        working-directory: CI
+      - name: Auto commit the version change
+        uses: test-room-7/action-update-file@v1
+        with:
+          file-path: version.txt
+          commit-msg: "CI: increment version number to ${{env.NewVersion}}"
+          github-token: ${{ secrets.GITHUB_TOKEN}}
+          branch: stable
+
+
+  InstallAndTest:
+    needs: UpdateVersion
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python-version: ['3.10', '3.11']
+
+    # defaults:
+    #   run:
+    #     shell: bash -l {0} # necessary for conda
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # TODO? install CUDA? if we ever want to test on GPU
+      # For now, github actions does not yet publicly offer GPU compute (and I don't expect it to be in the free tier any time soon)
+      - name: Install pytorch (on linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install pytorch (on mac)
+        if: matrix.os == 'macos-latest'
+        run: pip3 install torch
+      # TODO: also test on windows
+      # - name: Install pytorch (on windows)
+      #   if: matrix.os == 'windows-latest'
+      #   run: pip install torch
+
+      - name: Install magrittetorch
+        run: pip install .[dev]
+        # working-directory: magrittetorch
+
+      #and finally do our tests (located in the benchmarks folder)
+      - name: run analytic tests
+        run: pytest --verbose
+        working-directory: tests/benchmarks/analytic
+      # Numeric tests still TODO
+      # - name: run numeric tests
+      #   run: pytest --verbose
+      #   working-directory: tests/benchmarks/numeric

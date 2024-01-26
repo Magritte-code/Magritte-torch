@@ -81,18 +81,18 @@ class EnumParameter(Parameter[T], Generic[T, TYPE]):
 
 class Parameters:
     """List of Parameter's
+        pass
 
     Yields:
         Parameter: parameters for a model
     """
-    npoints = Parameter[int]("npoints")
-    # nfreqs = Parameter[int]("nfreqs")
-    nrays = Parameter[int]("nrays")
-    # name = Parameter[str]("name")
-    nboundary = Parameter[int]("nboundary")
-    nspecs = Parameter[int]("nspecs")
-    nlspecs = Parameter[int]("nlspecs")
-    #TODO: complete list of parameters
+
+    def __init__(self) -> None:
+        self.npoints = Parameter[int]("npoints")
+        self.nrays = Parameter[int]("nrays")
+        self.nboundary = Parameter[int]("nboundary")
+        self.nspecs = Parameter[int]("nspecs")
+        self.nlspecs = Parameter[int]("nlspecs")
 
     def __iter__(self) -> Iterator[Parameter[T]]:
         """Iterator for the parameters of a model
@@ -100,6 +100,6 @@ class Parameters:
         Yields:
             Iterator[Parameter[T]]: parameters for a model
         """
-        for attr in dir(self):
+        for attr in vars(self):
             if not attr.startswith("__"):#no builtin attributes, nor __iter__ itself
                 yield self.__getattribute__(attr)

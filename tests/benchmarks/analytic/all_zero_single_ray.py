@@ -19,9 +19,6 @@ from magrittetorch.model.geometry.boundary import BoundaryType
 import magrittetorch.tools.timer as timer
 import magrittetorch.tools.radiativetransferutils as rtutils
 from magrittetorch.algorithms.solvers import solve_long_characteristics_NLTE#TODO: add single iteration version that return mean (line) intensity
-# import magritte.tools    as tools
-# import magritte.setup    as setup
-# import magritte.core     as magritte
 
 
 dimension = 1
@@ -31,12 +28,12 @@ nspecs    = 3
 nlspecs   = 1
 nquads    = 1
 
-nH2  = 1.0E+12 * units.m **-3                 # [m^-3]
-nTT  = 1.0E+03 * units.m **-3                 # [m^-3]
+nH2  = 0.0 * units.m **-3                 # [m^-3]
+nTT  = 0.0 * units.m **-3                 # [m^-3]
 temp = 4.5E+00 * units.K                # [K]
 turb = 0.0E+00 * units.m / units.s                # [m/s]
 dx   = 1.0E+12 * units.m                # [m]
-dv   = 0.0E+00 * units.m / units.s
+dv   = 1.5E+02 * units.m / units.s
 
 
 def create_and_run_model (nosave=False):
@@ -44,7 +41,7 @@ def create_and_run_model (nosave=False):
     Create a model file for the all_constant benchmark, single ray.
     """
 
-    modelName = f'all_constant_single_ray'
+    modelName = f'all_zero_single_ray'
     modelFile = f'{moddir}{modelName}.hdf5'
     lamdaFile = f'{datdir}test.txt'
 
@@ -53,8 +50,15 @@ def create_and_run_model (nosave=False):
     model.geometry.geometryType.set(GeometryType.General3D)
     model.geometry.boundary.boundaryType.set(BoundaryType.AxisAlignedCube)
 
+    #to make sure that we have a region with constant and one with large velocity gradient
+    def velocity(i):
+        if (i<=npoints/2):
+            return 0 * units.m/units.s
+        else:
+            return (i-npoints/2)*dv
+
     model.geometry.points.position.set_astropy([[i, 0, 0] for i in range(npoints)]*dx)
-    model.geometry.points.velocity.set_astropy([[i, 0, 0] for i in range(npoints)]*dv)
+    model.geometry.points.velocity.set_astropy([[velocity(i)/units.m*units.s, 0, 0] for i in range(npoints)]*units.m/units.s)
     model.chemistry.species.abundance.set_astropy([[nTT*units.m**3, nH2*units.m**3, 0.0] for _ in range(npoints)]*units.m**-3)
     model.chemistry.species.symbol.set(np.array(['test', 'H2', 'e-'], dtype='S'))#TODO: figure out whether this can be changed to be done in the background
 
@@ -112,14 +116,18 @@ def create_and_run_model (nosave=False):
     phi = rtutils.profile(ld, k, temp, turb, frq)
     eta = rtutils.lineEmissivity(ld, pop)[k] * phi
     chi = rtutils.lineOpacity(ld, pop)[k] * phi
-    src = rtutils.lineSource(ld, pop)[k]
-    bdy = rtutils.I_CMB(frq)
+    # src = rtutils.lineSource(ld, pop)[k] # is nan
+    src = 0.0 * units.J/units.m**2 # Exact value does not matter, as the optical depth is zero in this test
+    v  = model.geometry.points.velocity.get_astropy()[:,0]
+    #Note: we assume that the velocity of the boundary needs to be taken into account when determining the boundary intensity
+    bdy1 = rtutils.I_CMB(frq * (1+v/constants.c))
+    bdyn = rtutils.I_CMB(frq * (1+(np.max(v)-v)/constants.c))
 
     def I_0 (x: Quantity[units.m]) -> Quantity[units.J/units.m**2]:
-        return src + (bdy-src)*np.exp(-chi*x)
+        return src + (bdy1-src)*np.exp(-chi*x)
 
     def I_1 (x: Quantity[units.m]) -> Quantity[units.J/units.m**2]:
-        return src + (bdy-src)*np.exp(-chi*(x[-1]-x))
+        return src + (bdyn-src)*np.exp(-chi*(x[-1]-x))
 
     def u_ (x: Quantity[units.m]) -> Quantity[units.J/units.m**2]:
         return 0.5 * (I_0(x) + I_1(x))
@@ -127,6 +135,8 @@ def create_and_run_model (nosave=False):
     #note: for the case of a single frequency: J==u
 
     error_u_0s = np.abs(rtutils.relative_error (u_(x), J_0s[:,0]))
+    print("bdy1", bdy1, "bdyn", bdyn, "src", src, "chi", chi, "v", v)
+    print("u", u_(x), "J", J_0s[:,0], "error", error_u_0s)
 
     result  = f'--- Benchmark name ----------------------------\n'
     result += f'{modelName                                    }\n'
@@ -160,9 +170,10 @@ def create_and_run_model (nosave=False):
         plt.savefig(f'{resdir}{modelName}-{timestamp}.png', dpi=150)
         plt.show()
 
+    print("First order solver max error: ", np.max(error_u_0s))
 
     #error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.
-    FIRSTORDER_AS_EXPECTED=(np.max(error_u_0s)<9e-9)
+    FIRSTORDER_AS_EXPECTED=(np.max(error_u_0s)<1e-15)
 
     if not FIRSTORDER_AS_EXPECTED:
         print("First order solver max error too large: ", np.max(error_u_0s))
@@ -173,7 +184,6 @@ def create_and_run_model (nosave=False):
 def run_test (nosave=False) -> None:
 
     create_and_run_model(nosave)
-    # run_model    (nosave)
 
     return
 

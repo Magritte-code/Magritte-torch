@@ -226,28 +226,23 @@ def create_and_run_model (a_or_b: str, nosave = False, use_widgets: bool = True)
         # plt.savefig(f'{resdir}{modelName}_cumu-{timestamp}.png', dpi=150)
 
     #setting 'b' not yet used for testing
-    # if a_or_b == 'a':
-        #error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.
-        # FEAUTRIER_AS_EXPECTED=(np.mean(error_u_2f)<3e-4)
-        # FIRSTORDER_AS_EXPECTED=(np.mean(error_u_0s)<2.7e-4)
+    if a_or_b == 'a':
+        # error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.
+        FIRSTORDER_AS_EXPECTED=(np.mean(error_u_computed)<4.4e-4)
 
-        # if not FIRSTORDER_AS_EXPECTED:
-        #     print("First order solver mean error too large: ", np.mean(error_u_0s))
-        # if not FEAUTRIER_AS_EXPECTED:
-        #     print("Feautrier solver mean error too large: ", np.mean(error_u_2f))
+        if not FIRSTORDER_AS_EXPECTED:
+            print("First order solver mean error too large: ", np.mean(error_u_computed))
 
-        # return (FEAUTRIER_AS_EXPECTED&FIRSTORDER_AS_EXPECTED)
+        return FIRSTORDER_AS_EXPECTED
 
     return
 
 
 def run_test (nosave=False, use_widgets=True):
 
-    # create_and_run_model ('a', nosave, use_widgets)
-    # run_model    ('a', nosave)
+    create_and_run_model ('a', nosave, use_widgets)
 
-    create_and_run_model ('b', nosave, use_widgets)
-    # run_model    ('b', nosave)
+    # create_and_run_model ('b', nosave, use_widgets)
 
 
 if __name__ == '__main__':
