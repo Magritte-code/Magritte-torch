@@ -58,7 +58,7 @@ jobs:
           file-path: version.txt
           commit-msg: "CI: increment version number to ${{env.NewVersion}}"
           github-token: ${{ secrets.GITHUB_TOKEN}}
-          branch: stable
+          branch: main
 
 
   InstallAndTest:
