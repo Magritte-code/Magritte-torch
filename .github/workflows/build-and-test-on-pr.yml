@@ -33,7 +33,7 @@ jobs:
 
       - name: Install magrittetorch
         run: pip install .
-        working-directory: magrittetorch
+        # working-directory: magrittetorch
 
       #and finally do our tests (located in the benchmarks folder)
       - name: run analytic tests
