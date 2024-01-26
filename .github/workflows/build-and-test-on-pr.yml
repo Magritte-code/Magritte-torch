@@ -35,7 +35,7 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - name: Install pytorch (on mac)
         if: matrix.os == 'macos-latest'
-        run: pip install torch
+        run: pip3 install torch
       # TODO: also test on windows
       # - name: Install pytorch (on windows)
       #   if: matrix.os == 'windows-latest'
