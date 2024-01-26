@@ -93,7 +93,7 @@ jobs:
       #   run: pip install torch
 
       - name: Install magrittetorch
-        run: pip install .
+        run: pip install .[dev]
         # working-directory: magrittetorch
 
       #and finally do our tests (located in the benchmarks folder)
