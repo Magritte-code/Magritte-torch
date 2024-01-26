@@ -28,8 +28,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # TODO? install CUDA? if we every want to test on GPU
+      # TODO? install CUDA? if we ever want to test on GPU
       # For now, github actions does not yet publicly offer GPU compute (and I don't expect it to be in the free tier any time soon)
+      - name: Install pytorch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install magrittetorch
         run: pip install .
