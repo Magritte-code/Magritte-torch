@@ -18,9 +18,9 @@ jobs:
         os: [macos-latest, ubuntu-latest]
         python-version: ['3.9', '3.10']
 
-    defaults:
-      run:
-        shell: bash -l {0} #necessary for conda
+    # defaults:
+    #   run:
+    #     shell: bash -l {0} #necessary for conda
     steps:
       - uses: actions/checkout@v4
       - name: Setup Python
