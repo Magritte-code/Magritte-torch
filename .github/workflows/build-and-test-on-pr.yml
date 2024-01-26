@@ -30,8 +30,16 @@ jobs:
 
       # TODO? install CUDA? if we ever want to test on GPU
       # For now, github actions does not yet publicly offer GPU compute (and I don't expect it to be in the free tier any time soon)
-      - name: Install pytorch
+      - name: Install pytorch (on linux)
+        if: matrix.os == 'ubuntu-latest'
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: Install pytorch (on mac)
+        if: matrix.os == 'macos-latest'
+        run: pip install torch
+      # TODO: also test on windows
+      # - name: Install pytorch (on windows)
+      #   if: matrix.os == 'windows-latest'
+      #   run: pip install torch
 
       - name: Install magrittetorch
         run: pip install .
