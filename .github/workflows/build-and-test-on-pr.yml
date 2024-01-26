@@ -2,7 +2,7 @@
 name: Build and test on pull request
 on:
   pull_request:
-    branches: [ stable ]
+    branches: [ main ]
 jobs:
   #Before testing the code, make sure that it is linted properly
   #Still todo: decide on a formatting style for python code

@@ -2,7 +2,7 @@
 name: Build
 on:
   push:
-    branches: [ stable ]
+    branches: [ main ]
 jobs:
 #Before doing anything, make sure that the code is linted
   # run-linters:
