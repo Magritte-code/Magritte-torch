@@ -78,7 +78,7 @@ class TestAnalytic:
 
 #     @pytest.mark.incremental
     class TestVelocityGradient1D:
-        def test_velocity_gradient_1D_setup(self):
+        def test_velocity_gradient_1D_setup_and_run(self):
             velocity_gradient_setup_and_run(nosave=True)
 
 #         class TestVelocityGradient1DBenchmarks:
