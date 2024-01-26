@@ -66,7 +66,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest, ubuntu-latest, windows-latest]
         python-version: ['3.10', '3.11']
 
     # defaults:
@@ -87,10 +87,9 @@ jobs:
       - name: Install pytorch (on mac)
         if: matrix.os == 'macos-latest'
         run: pip3 install torch
-      # TODO: also test on windows
-      # - name: Install pytorch (on windows)
-      #   if: matrix.os == 'windows-latest'
-      #   run: pip install torch
+      - name: Install pytorch (on windows)
+        if: matrix.os == 'windows-latest'
+        run: pip install torch
 
       - name: Install magrittetorch
         run: pip install .[dev]
