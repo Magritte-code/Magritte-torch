@@ -45,22 +45,23 @@ with open(os.path.join(this_dir, "../version.txt"), "r+") as file:
         patch=patch+1
         #by default, increment patch version
 
-    # print([major, minor, patch])
     replaced_line=re.sub('(?P<major>|\d*)\.(?P<minor>\d*)\.(?P<patch>\d*)', str(major)+"."+str(minor)+"."+str(patch), filecontents)
-    # print(replaced_line)
-
-    #and finally replace the line in the file with the new line
-    # line_regex=re.escape(line)
-    # replaced_file=re.sub(line_regex, replaced_line, filecontents)
-    # print("here")
-    # print(replaced_file)
 
     file.close()
-
+    # Make sure that the entire file is replaced by first closing the file and then opening it again
     writefile=open(os.path.join(this_dir, "../version.txt"), "w")
-
     writefile.write(replaced_line)
     writefile.close()
+
+    #also replace the version in the pyproject file
+    pyprojectfile=open(os.path.join(this_dir, "../pyproject.toml"), "r+")
+    pyprojectcontents=pyprojectfile.read()
+    pyprojectcontents=re.sub('version = "(?P<major>|\d*)\.(?P<minor>\d*)\.(?P<patch>\d*)"', 'version = "'+str(major)+"."+str(minor)+"."+str(patch)+'"', pyprojectcontents)
+    pyprojectfile.close()
+    # Make sure that the entire file is replaced by first closing the file and then opening it again
+    pyprojectfile=open(os.path.join(this_dir, "../pyproject.toml"), "w")
+    pyprojectfile.write(pyprojectcontents)
+    pyprojectfile.close()
 
     #also output the new version
     sys.stdout.write(str(major)+"."+str(minor)+"."+str(patch))
