@@ -16,9 +16,19 @@ class Lines:
         self.lineProducingSpecies : DelayedListOfClassInstances[LineProducingSpecies] = DelayedListOfClassInstances(self.parameters.nlspecs, lambda i: LineProducingSpecies(self.parameters, self.dataCollection, i), "lineProducingSpecies"); dataCollection.add_delayed_list(self.lineProducingSpecies)
 
     def get_total_number_lines(self) -> int:
+        """Return the total number of lines in the model
+
+        Returns:
+            int: Total number of lines
+        """
         return sum([lspec.linedata.nrad.get() for lspec in self.lineProducingSpecies])
     
     def get_total_number_line_frequencies(self) -> int:
+        """Return the total number of line frequencies in the model for NLTE radiative transfer
+
+        Returns:
+            int: Total number of line frequencies
+        """
         return sum([lspec.get_n_lines_freqs() for lspec in self.lineProducingSpecies])
 
     #DERPRECATED: use pre-computed lines instead to sum over
@@ -137,24 +147,7 @@ class Lines:
             line_frequencies[:, start_freq_idx:start_freq_idx+nfreqs] = lspec.get_line_frequencies(device=device)
             start_freq_idx+=nfreqs
         return line_frequencies
-    
-    # def get_all_line_frequencies_freqhelper(self, device: torch.device = torch.device("cpu")) -> FrequencyEvalHelper:
-    #     """Return all frequencies (in comoving frame) required for NLTE radiative transfer
 
-    #     Args:
-    #         device (torch.device, optional): Device on which to compute and return the line frequencies. Defaults to torch.device("cpu").
-
-    #     Returns:
-    #         torch.Tensor: All NLTE line frequencies. Has dimensions [parameters.npoints, self.get_total_number_line_frequencies()]
-    #     """
-    #     #TODO: will ineviably need to be split into multiple parts to get results
-    #     line_frequencies = torch.empty((self.parameters.npoints.get(), self.get_total_number_line_frequencies()), dtype=Types.FrequencyInfo, device=device)
-    #     start_freq_idx = 0
-    #     for lspec in self.lineProducingSpecies:
-    #         nfreqs: int = lspec.get_n_lines_freqs()
-    #         line_frequencies[:, start_freq_idx:start_freq_idx+nfreqs] = lspec.get_line_frequencies(device=device)
-    #         start_freq_idx+=nfreqs
-    #     # return FrequencyEvalHelper(line_frequencies
 
     # @torch.compile
     def get_sum_line_opacities_emissivities_using_freqevalhelper(self, origin_point_indices: torch.Tensor, curr_point_indices: torch.Tensor, doppler_shift: torch.Tensor, freqEvalHelper: FrequencyEvalHelper) -> Tuple[torch.Tensor, torch.Tensor]:

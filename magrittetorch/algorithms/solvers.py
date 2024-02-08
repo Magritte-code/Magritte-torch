@@ -1,83 +1,176 @@
-from magrittetorch.algorithms.raytracer import RaytracerGenerator
 from magrittetorch.algorithms.torch_algorithms import interpolate2D_linear
 from magrittetorch.model.model import Model
 from magrittetorch.model.geometry.geometry import GeometryType
-from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper
+from magrittetorch.model.sources.frequencyevalhelper import FrequencyEvalHelper, ALIFreqEvalHelper
 from magrittetorch.utils.storagetypes import Types
-from magrittetorch.utils.constants import min_opacity, min_optical_depth, convergence_fraction, min_rel_pop_for_convergence
+from magrittetorch.utils.constants import min_opacity, min_optical_depth, convergence_fraction, min_rel_pop_for_convergence, min_level_pop
 from magrittetorch.model.image import Image, ImageType
 from magrittetorch.tools.radiativetransferutils import relative_error
 
 import torch
 import time
 
-#DEPRECATED: appends waste a lot of time
-# def solve_long_characteristics(model: Model, direction: torch.Tensor, device: torch.device = torch.device("cpu")) -> None:
-#     start =time.time()
-#     point_ind, distances, scatter_ind = trace_rays_sparse(model, direction) #dims: [N_POINTS_TO_EVAL]
-#     end = time.time()
-#     direction_device = direction.to(device)[None, :]
-#     print(point_ind.get_device(), distances.get_device(), scatter_ind.get_device())
-#     print("ray trace time", end-start)
-#     NLTE_freqs = model.sources.lines.get_all_line_frequencies(device=device) #dims: [parameters.npoints, NFREQS]#TODO: move to function arguments
-#     model_velocities = model.geometry.points.velocity.get(device) #dims: [parameters.npoints, 3]
-#     model_positions = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
-#     origin_velocities = model_velocities[scatter_ind, :]#err, assumes behavior that might change in the future# dims: [N_POINTS_TO_EVAL]
-#     origin_positions = model_positions[scatter_ind, :]#err, assumes behavior that might change in the future # dims: [N_POINTS_TO_EVAL]
-#     # point_velocities = model_velocities[point_ind, :] #dims: [parameters.npoints, 3]
-#     print("computing doppler")
-#     doppler_shift = model.geometry.get_doppler_shift(point_ind.to(device), origin_positions, origin_velocities, direction_device, distances.to(device), device)
-#     print("shift", doppler_shift)
-#     freqs_to_evaluate = NLTE_freqs[point_ind, :]*doppler_shift[:, None]#TODO: add doppler shift here
-#     print("evaluating opacities")
-#     # print()
-#     opacities, emissivities = model.sources.get_total_opacity_emissivity(point_ind, freqs_to_evaluate, device)
-#     print(opacities, emissivities)
+
+def solve_long_characteristics_ALI_diag_single_direction(model: Model, raydir: torch.Tensor, start_positions: torch.Tensor, start_velocities: torch.Tensor, start_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, ALIfreqhelper: ALIFreqEvalHelper, device: torch.device) -> torch.Tensor:
+    """Computes the ALI diagonal for a single direction, for all given start positions.
+    Note: all data must be consistent with the normal solvers.solve_long_characteristics_single_direction function, as this function is a direct extension of that function.
+
+    Args:
+        model (Model): The model on which to compute
+        raydir (torch.Tensor): Direction of the ray. Has dimensions [3]
+        start_positions (torch.Tensor): Positions of all points in 3D space. Has dimensions [parameters.npoints, 3]
+        start_velocities (torch.Tensor): Corresponding velocities all points in 3D space. Has dimensions [parameters.npoints, 3]
+        start_indices (torch.Tensor): Point indices to start tracing the rays. Has dimensions [parameters.npoints].
+        freqhelper (FrequencyEvalHelper): Frequency evaluation helper object for narrow spectral lines.
+        ALIfreqhelper (ALIFreqEvalHelper): Frequency evaluation helper object for ALI calculations.
+        device (torch.device): Device on which to compute and return the result.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: Tuple containing the ALI diagonal fraction and the fraction times source function. Both have dimensions [parameters.npoints, model.sources.lines.get_total_number_lines]
+    """
+    #Note: contains some duplicated code from solve_long_characteristics_single_direction
+    positions_device = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
+    npoints = start_positions.size(dim=0)#number of points to trace NPOINTS
+
+    #get neighbors per direction; saves 50% time for raytracing in 3D geometries
+    neighbors_device, n_neighbors_device, cum_n_neighbors_device = model.geometry.get_neighbors_in_direction(raydir, device) 
+    #dims: [sum(n_neighbors_in_correct_direction)], [parameters.npoints], [parameters.npoints]
 
 
-#DEPRECATED: generator will be removed
-def solve_long_characteristics_with_generator(model:Model, direction: torch.Tensor, device: torch.device) -> None:
-    #note: this is just a test function for now
-    #I might change the api completely
-    #also: no memory management yet, should be implemented in some function above this one; providing which points we need
-    NLTE_freqs = model.sources.lines.get_all_line_frequencies(device=device) #dims: [parameters.npoints, NFREQS]#TODO: move to function arguments
-    model_velocities = model.geometry.points.velocity.get(device) #dims: [parameters.npoints, 3]
-    model_positions = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
-    origin_velocities = model_velocities[:, :]#err, assumes behavior that might change in the future# dims: [N_POINTS_TO_EVAL]
-    origin_positions = model_positions[:, :]#err, assumes behavior that might change in the future # dims: [N_POINTS_TO_EVAL]
+    is_boundary_point_device = model.geometry.boundary.get_boundary_in_direction(raydir, device) #dims: [parameters.npoints]
+    # computed_intensity = torch.zeros((npoints, freqhelper.original_frequencies.size(dim=1)), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+
+    # The starting indices do not necessarily correspond with the starting indices, as imaging starts tracing outside the model
+    # Therefore the starting distance can be nonzero
+    distance_travelled = model.geometry.get_starting_distance(raydir, start_indices, start_positions, device) #dims: [NPOINTS]
+
+    start_ids = start_indices.clone()#will be masked, so needs to be clone in order to preserve the original indices (for tracing other directions)
+    prev_ids = start_ids #dims: [NPOINTS]
+
+    curr_ids = start_ids.clone() #dims: [NPOINTS]
+    boundary_mask = is_boundary_point_device[curr_ids] #dims: [NPOINTS]
+    #for 1D spherical symmetry, we need to allow the rays to start if they are going inside the model
+    if (model.geometry.geometryType.get() == GeometryType.SpericallySymmetric1D):
+        boundary_mask = torch.sum((start_positions - raydir[None, :] * torch.matmul(start_positions, raydir)[:, None])**2, dim=1) >= torch.max(model.geometry.points.position.get(device)[:, 0])**2 #dims: [NPOINTS]
+
+    mask_active_rays = torch.logical_not(boundary_mask) #dims: [N_ACTIVE_RAYS<=NPOINTS] Dimension will change, as not all rays end at the same time
+    n_active_rays = torch.sum(mask_active_rays) #number of active rays, dims: []
+    data_indices = torch.arange(npoints, device=device) #dims: [N_ACTIVE_RAYS<=NPOINTS]
+    # boundary_indices = curr_ids[boundary_mask] #dims: [N_ACTIVE_RAYS<=NPOINTS]
+    prev_shift = model.geometry.get_doppler_shift(curr_ids, start_positions, start_velocities, raydir, distance_travelled, device) #dims: [NPOINTS]
+    prev_opacities, starting_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, prev_shift, freqhelper, device) #dims: [NPOINTS, NFREQS]
+    prev_source_function = starting_emissivities/(prev_opacities+min_opacity) #dims: [NPOINTS, NFREQS]
+    # We need to compute the source function at the current point for the ALI contribution
+    single_line_opacities, prev_single_line_emissivities = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, prev_shift, ALIfreqhelper, device) #dims: [NPOINTS, NFREQS]
+    single_line_source_function = prev_single_line_emissivities/(single_line_opacities+min_opacity) #dims: [NPOINTS, NFREQS]
+
+    #already mask previous values
+    prev_opacities = prev_opacities[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+    prev_single_line_opacities = single_line_opacities[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+    prev_source_function = prev_source_function[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+    prev_shift = prev_shift[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS]
+    single_line_source_function = single_line_source_function[mask_active_rays] #dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+
+    ALI_diag_single_dir_fraction = torch.zeros((npoints, model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+    ALI_diag_single_dir_Jdiff = torch.zeros((npoints, model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+
+    #only compute ALI stuff for non-boundary points (per direction); For zero distances, the contribution will be zero anyway
+    curr_ids = curr_ids.masked_select(mask_active_rays)
+    start_ids = start_ids.masked_select(mask_active_rays)
+    data_indices = data_indices.masked_select(mask_active_rays) #dims: [N_ACTIVE_RAYS<=NPOINTS]
+    distance_travelled = distance_travelled.masked_select(mask_active_rays)
+    start_positions = start_positions[mask_active_rays,:]
+    start_velocities = start_velocities[mask_active_rays,:]
     
-    for (next_point, prev_point, travelled_distance, original_index) in RaytracerGenerator(model, direction, device):
+    next_ids, distances = model.geometry.get_next(start_positions, raydir, curr_ids, distance_travelled, device, positions_device, neighbors_device, n_neighbors_device, cum_n_neighbors_device)
+    distance_increment = distances - distance_travelled
 
-        doppler_shift = model.geometry.get_doppler_shift(next_point, origin_positions[original_index], origin_velocities[original_index], direction, travelled_distance, device)
-        freqs_to_evaluate = NLTE_freqs[next_point, :]*doppler_shift[:, None]#TODO: add doppler shift here
-        opacities, emissivities = model.sources.get_total_opacity_emissivity(next_point, freqs_to_evaluate, device)
-        optical_depths = model.sources.get_total_optical_depth(next_point, freqs_to_evaluate, freqs_to_evaluate, travelled_distance, doppler_shift, doppler_shift, opacities, emissivities, device)
-        pass
+    distance_travelled = distances
+    prev_ids = curr_ids
+    curr_ids = next_ids
 
-#DEPRECATED: generator will be removed
-def solve_long_characteristics_restructured_freqs(model:Model, direction: torch.Tensor, device: torch.device) -> None:
-    #note: this is just a test function for now
-    #I might change the api completely
-    #also: no memory management yet, should be implemented in some function above this one; providing which points we need
-    NLTE_freqs = model.sources.lines.get_all_line_frequencies(device=device) #dims: [parameters.npoints, NFREQS]#TODO: move to function arguments
-    model_velocities = model.geometry.points.velocity.get(device) #dims: [parameters.npoints, 3]
-    model_positions = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
-    origin_velocities = model_velocities[:, :]#err, assumes behavior that might change in the future# dims: [N_POINTS_TO_EVAL]
-    origin_positions = model_positions[:, :]#err, assumes behavior that might change in the future # dims: [N_POINTS_TO_EVAL]
-    freqhelper = FrequencyEvalHelper(NLTE_freqs, model.sources.lines.lineProducingSpecies.list, model_velocities, device)#TODO: should be result of called get_all_line_freqs
-    sum_optical_depths = torch.zeros_like(NLTE_freqs, dtype=Types.FrequencyInfo, device=device)
-    computed_intensity = torch.zeros_like(NLTE_freqs, dtype=Types.FrequencyInfo, device=device)
-    #TODO: add boundary intensity add end point
 
-    for (next_point, prev_point, travelled_distance, original_index) in RaytracerGenerator(model, direction, device):
-        doppler_shift = model.geometry.get_doppler_shift(next_point, origin_positions[original_index], origin_velocities[original_index], direction, travelled_distance, device)
-        opacities, emissivities = model.sources.get_total_opacity_emissivity_freqhelper(original_index, next_point, doppler_shift, freqhelper, device)
-        optical_depths = model.sources.get_total_optical_depth_freqhelper(next_point, prev_point, original_index, freqhelper, travelled_distance, doppler_shift, doppler_shift, opacities, emissivities, device)
-        source_function = emissivities/opacities
-        #TODO: better implementation, using prev and current source function, instead of constant source
-        computed_intensity[original_index] += source_function * (1.0-torch.exp(-optical_depths)) * torch.exp(-sum_optical_depths[original_index])
-        sum_optical_depths[original_index] += optical_depths
+    #After raytracing, we now compute everything required
+    doppler_shift = model.geometry.get_doppler_shift(curr_ids, start_positions, start_velocities, raydir, distances, device)
+    curr_opacities, _ = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, doppler_shift, freqhelper, device)
+    optical_depths = model.sources.get_total_optical_depth_freqhelper(curr_ids, prev_ids, start_ids, freqhelper, distance_increment, doppler_shift, prev_shift, curr_opacities, prev_opacities, device)
+    single_line_opacities, _ = model.sources.get_total_opacity_emissivity_freqhelper(start_ids, curr_ids, doppler_shift, ALIfreqhelper, device)
+    single_line_optical_depths = model.sources.get_total_optical_depth_freqhelper(curr_ids, prev_ids, start_ids, ALIfreqhelper, distance_increment, doppler_shift, prev_shift, single_line_opacities, prev_single_line_opacities, device)
 
+    #To compute the intensity contribution, we need to multiply the source function by the factors below
+    # This is exactly the ALI diagonal (minus averaging over direction and line profile, and ignoring the fact that continuum/other lines might also contribute)
+    close_factor = (1+torch.expm1(-optical_depths-min_optical_depth)/(optical_depths+min_optical_depth))
+
+    encountered_freqs: int = 0
+    encountered_lines: int = 0
+    #And average already over the line profile
+    for specidx in range(model.sources.lines.lineProducingSpecies.length_param.get()):
+        lspec = model.sources.lines.lineProducingSpecies[specidx]
+        nfreqs: int = lspec.get_n_lines_freqs()
+        nlines: int = lspec.linedata.nrad.get()
+        npoints: int = model.parameters.npoints.get()
+        expanded_quad_weights = lspec.get_line_weights(device) #dims: [N_LINE_FREQS]
+        expanded_line_index = lspec.get_line_indices_NTLE(device) #dims: [lspec.linequadrature.nquads*lspec.linedata.nlines=N_LINE_FREQS]
+
+        #The ALI diagonal is defined by the intensity generated locally because of the line; without any contributions from other lines
+        # Practically, this means we need the 'close factor', multiplied by the contribution fraction of the optical depth;
+        # This all times the source function of the line, and then integrated over the line quadrature (frequency space) and averaged over the direction
+        # dims: [N_ACTIVE_RAYS<=NPOINTS, N_LINE_FREQS]
+        single_line_optical_depths = model.sources.get_total_optical_depth_freqhelper(curr_ids, prev_ids, start_ids, freqhelper, distance_increment, doppler_shift, doppler_shift, curr_opacities[:, encountered_freqs:encountered_freqs+nfreqs], prev_opacities[:, encountered_freqs:encountered_freqs+nfreqs], device)
+        # dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+        ALI_fraction = expanded_quad_weights[None, :] * close_factor[:,encountered_freqs:encountered_freqs+nfreqs] * single_line_optical_depths[:, encountered_freqs:encountered_freqs+nfreqs]/(optical_depths[:, encountered_freqs:encountered_freqs+nfreqs]+min_optical_depth)
+        # dims: [N_ACTIVE_RAYS<=NPOINTS, NFREQS]
+        ALI_Jdiff = ALI_fraction * single_line_source_function[:, encountered_freqs:encountered_freqs+nfreqs]
+
+        #Dummy data for scatter_add, with correct dimensions
+        ALI_diag_dummy = torch.zeros((n_active_rays, nlines), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+
+        #dims: [N_ACTIVE_RAYS<=NPOINTS, lspec.linedata.nrad]
+        ALI_diag_single_dir_fraction[mask_active_rays, encountered_lines:encountered_lines+nlines] = torch.scatter_add(ALI_diag_dummy, 1, expanded_line_index[None, :].expand(n_active_rays, -1), ALI_fraction)
+        #dims: [N_ACTIVE_RAYS<=NPOINTS, lspec.linedata.nrad]
+        ALI_diag_single_dir_Jdiff[mask_active_rays, encountered_lines:encountered_lines+nlines] = torch.scatter_add(ALI_diag_dummy, 1, expanded_line_index[None, :].expand(n_active_rays, -1), ALI_Jdiff)
+
+        encountered_freqs += nfreqs
+        encountered_lines += nlines
+
+    return ALI_diag_single_dir_fraction, ALI_diag_single_dir_Jdiff #NOT YET AVERAGED IN ANGULAR DIRECTION
+
+
+def solve_long_characteristics_ALI_diag(model: Model, device: torch.device) -> torch.Tensor:
+    """Computes the ALI diagonal for all given start positions.
+    Note: all data must be consistent with the normal solvers.solve_long_characteristics_single_direction function, as this function is based on a direct extension of that function.
+
+    Args:
+        model (Model): The model on which to compute
+        start_positions (torch.Tensor): Positions of all points in 3D space. Has dimensions [parameters.npoints, 3]
+        start_velocities (torch.Tensor): Corresponding velocities all points in 3D space. Has dimensions [parameters.npoints, 3]
+        start_indices (torch.Tensor): Point indices to start tracing the rays. Has dimensions [parameters.npoints].
+        freqhelper (FrequencyEvalHelper): Frequency evaluation helper object for narrow spectral lines.
+        ALIfreqhelper (ALIFreqEvalHelper): Frequency evaluation helper object for ALI calculations.
+        device (torch.device): Device on which to compute and return the result.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: Tuple containing the ALI diagonal fraction and the fraction times source function. Both have dimensions [parameters.npoints, model.sources.lines.get_total_number_lines]
+    """
+    start_positions = model.geometry.points.position.get(device) #dims: [parameters.npoints, 3]
+    start_velocities = model.geometry.points.velocity.get(device) #dims: [parameters.npoints, 3]
+    start_indices = torch.arange(model.parameters.npoints.get(), device=device) #dims: [parameters.npoints]
+    freqhelper = FrequencyEvalHelper(model.sources.lines.get_all_line_frequencies(device=device), model.sources.lines.lineProducingSpecies.get(), start_velocities, device)
+    ALIfreqhelper = ALIFreqEvalHelper(model.sources.lines.get_all_line_frequencies(device=device), model.sources.lines.lineProducingSpecies.get(), device)
+    #Integrate over all directions
+    ALI_diag_fraction = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+    ALI_diag_Jdiff = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NFREQS]
+    raydirs = model.geometry.rays.direction.get(device)
+    weights = model.geometry.rays.weight.get(device)
+    rr = 0
+    for raydir_index in range(raydirs.shape[0]):
+        #Adding the results immediately, as we will otherwise run out of memory
+        ALI_diag_single_dir_fraction, ALI_diag_single_dir_Jdiff = solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions, start_velocities, start_indices, freqhelper, ALIfreqhelper, device)
+        ALI_diag_fraction += ALI_diag_single_dir_fraction * weights[raydir_index]
+        ALI_diag_Jdiff += ALI_diag_single_dir_Jdiff * weights[raydir_index]
+        rr += 1
+
+    return ALI_diag_fraction, ALI_diag_Jdiff
 
 def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tensor, start_positions: torch.Tensor, start_velocities: torch.Tensor, start_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, device: torch.device) -> torch.Tensor:
     """Solves the radiative transfer equation using the long-characteristics method in a single direction. TODO: implement non-zero starting distances (for imaging)
@@ -90,6 +183,7 @@ def solve_long_characteristics_single_direction(model: Model, raydir: torch.Tens
         start_indices (torch.Tensor): Point indices to start tracing the rays. Has dimensions [NPOINTS]. TODO? automatically determine?
         freqhelper (FrequencyEvalHelper): Frequency evaluation helper object for narrow spectral lines.
         device (torch.device): Device on which to compute and return the result.
+        compute_ALI_diag (bool, optional): Whether to compute the ALI diagonal. Defaults to False.
 
     Returns:
         torch.Tensor: The computed intensities [W/m**2/Hz/rad**2]. Has dimensions [NPOINTS, NFREQS]
@@ -315,39 +409,50 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     starttime = time.time()
     for raydir_index in range(raydirs.shape[0]):
         print("rr:", raydir_index)
-        print(time.time()-starttime)
         #Adding the results immediately, as we will otherwise run out of memory
         total_intensity += weights[raydir_index] * solve_long_characteristics_single_direction(model, raydirs[raydir_index,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
+    print("time for this iteration: ", time.time()-starttime, "s")
+
 
     encountered_freqs: int = 0
+    encountered_lines: int = 0
     # now numerically integrate the intensities of each different line# TODO: check if better option exists, without for loop
-    for lineidx in range(model.sources.lines.lineProducingSpecies.length_param.get()):
-        lspec = model.sources.lines.lineProducingSpecies[lineidx]
-        quad_weights = lspec.linequadrature.weights.get(device)# dims: [NQUADS]
+    for specidx in range(model.sources.lines.lineProducingSpecies.length_param.get()):
+        lspec = model.sources.lines.lineProducingSpecies[specidx]
         nfreqs: int = lspec.get_n_lines_freqs()
-        expanded_quad_weights = quad_weights.repeat(lspec.linedata.nrad.get())#needs to be expanded to match the number of frequencies
-        total_integrated_line_intensity[:, lineidx] = torch.sum(expanded_quad_weights[None, :] * total_intensity[:,encountered_freqs:encountered_freqs+nfreqs], dim=1)
+        nlines: int = lspec.linedata.nrad.get()
+        npoints: int = model.parameters.npoints.get()
+        expanded_quad_weights = lspec.get_line_weights(device)#needs to be expanded to match the number of frequencies
+        expanded_line_index = lspec.get_line_indices_NTLE(device) #dims: [nquads*nlines=NFREQS]
+
+        total_integrated_line_intensity[:, encountered_lines:encountered_lines+nlines].scatter_add_(1, expanded_line_index[None, :].expand(npoints, -1), expanded_quad_weights[None, :] * total_intensity[:,encountered_freqs:encountered_freqs+nfreqs])
 
         encountered_freqs += nfreqs
+        encountered_lines += nlines
 
     return total_integrated_line_intensity
-    #For initial testing, only solve for a single direction. This will be changed afterwards
-    #TODO list: compute mean line intensities, ALI factors (somehow), and feed tghis into statistical equilibrium equationsn, add ng-acceleration
-    # return solve_long_characteristics_single_direction(model, raydirs[0,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
 
 
-def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device) -> list[torch.Tensor]:
+def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device, ALI_diag: tuple[torch.Tensor, torch.Tensor] = None) -> list[torch.Tensor]:
     """Computes the level populations using the statistical equilibrium equations, given the mean line intensities J
-    TODO: also include accelerated lambda iteration, just add (optional) extra functon argument
+    TODO: also include accelerated lambda iteration, just add (optional) extra functon arguments
 
     Args:
         model (Model): The model
         J (torch.Tensor): The (effective) mean line intensity. Has dims [parameters.npoints, parameters.nlines?]
         device (torch.device): Device on which to compute
+        ALI_diag (tuple[torch.Tensor, torch.Tensor], optional): The ALI diagonal fraction and the fraction times the source function. Defaults to None.
+        Both have dimensions [parameters.npoints, model.sources.lines.get_total_number_lines]
 
     Returns:
         The list of updated level populations. Has dims [[parameters.npoints, parameters.nlev] for every line species]
     """
+
+    if (ALI_diag is None):
+        ALI_diag_fraction = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
+        ALI_diag_Jdiff = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
+    else:
+        ALI_diag_fraction, ALI_diag_Jdiff = ALI_diag #dims: [NPOINTS, NLINES]
 
 
     total_encountered_lines: int = 0
@@ -369,7 +474,11 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         # Lambdarelevant = ... [:, also the same]
         matrix = torch.zeros((npoints, nlev, nlev), dtype=Types.LevelPopsInfo, device=device)
 
-        rate_upper_to_lower = einsteinA[None, :] + einsteinBs[None, :] * Jrelevant#dims: [npoints, nlines]
+        #Correct J for ALI
+        Jrelevant = (Jrelevant - ALI_diag_Jdiff[:, total_encountered_lines:total_encountered_lines+nlines])
+
+        rate_upper_to_lower = einsteinA[None, :] * (1 - ALI_diag_fraction[:, total_encountered_lines: total_encountered_lines+nlines]) \
+            + einsteinBs[None, :] * Jrelevant#dims: [npoints, nlines]
         rate_lower_to_upper = einsteinBa[None, :] * Jrelevant
         full_upperidx = upperidx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
         full_loweridx = loweridx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
@@ -413,6 +522,9 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         vector[:, nlev-1] = full_abundance[:, lspec.linedata.num.get()]
 
         levelpops: torch.Tensor = torch.linalg.solve(matrix, vector)
+        # Put negative level populations to zero and renormalize
+        levelpops[levelpops < 0.0] = 0.0
+        levelpops = levelpops * lspec.population_tot.get(device)[:, None]/torch.sum(levelpops, dim=1)[:, None]
         computed_level_pops.append(levelpops)
         total_encountered_lines+=nlines
 
@@ -420,25 +532,27 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
 
 
 def level_pops_converged(previous_level_pops: torch.Tensor, current_level_pops: torch.Tensor, relative_diff_threshold: float = min_rel_pop_for_convergence, convergence_fraction: float = convergence_fraction) -> bool:
-    print("relative error:", torch.mean(relative_error(previous_level_pops, current_level_pops)).item())
-    print("relative diff threshold:", relative_diff_threshold)
-    print("convergence fraction:", convergence_fraction)
-    print("mean relative error:", torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)))
-    print("converged:", torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
-    return (torch.mean((relative_error(previous_level_pops, current_level_pops) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
+    print("mean relative error:", torch.mean(relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop)).item())
+    # print("relative diff threshold:", relative_diff_threshold)
+    # print("convergence fraction:", convergence_fraction)
+    print("fraction converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)))
+    print("converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
+    return (torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
 
 
-def compute_level_populations(model: Model, device: torch.device, max_n_iterations: int = 50, use_ng_acceleration: bool = True, max_its_between_ng_accel: int = 8) -> None:
+def compute_level_populations(model: Model, device: torch.device, max_n_iterations: int = 50, use_ng_acceleration: bool = True, use_ALI: bool = True, max_its_between_ng_accel: int = 8) -> None:
     """
     Computes the level populations of the given model using an iterative approach,
     utilizing the mean line intensities to solve the statistical equilibrium equations.
-    TODO: update this docstring with ng-acceleration
-    TODO: think about implementing ALI
+    Optionally also uses Ng-acceleration and local ALI to speed up the convergence.
 
     Args:
         model (Model): The model for which to compute the level populations.
         device (torch.device): The device on which to compute.
         max_n_iterations (int, optional): The maximum number of iterations to perform. Defaults to 50.
+        use_ng_acceleration (bool, optional): Whether to use Ng-acceleration. Defaults to True.
+        use_ALI (bool, optional): Whether to use ALI. Defaults to True.
+        max_its_between_ng_accel (int, optional): The maximum number of iterations between Ng-acceleration. Defaults to 8.
 
     Returns:
         None
@@ -446,6 +560,7 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
     #TODO: check if level pops have converged
     #to make sure that everything is up to date, we infer
     model.dataCollection.infer_data()
+    starttime = time.time()
     if use_ng_acceleration:
         relative_diff_default_its: float
         relative_diff_ng_accel: float
@@ -455,7 +570,7 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
         for linespecidx in range(model.parameters.nlspecs.get()):#initialize for every species
             previous_level_pops.append(model.sources.lines.lineProducingSpecies[linespecidx].population.get(device).unsqueeze(0))
             last_ng_accelerated_pops.append(torch.zeros((model.parameters.npoints.get(), model.sources.lines.lineProducingSpecies[linespecidx].linedata.nlev.get()), dtype=Types.LevelPopsInfo, device=device))
-        n_its_in_ng_accel: int = 1
+        # n_its_in_ng_accel: int = 1
             
         for i in range(max_n_iterations):
             print("it:", i)
@@ -463,8 +578,14 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
             all_species_converged = True
             relative_diff_default_its = 0.0
 
-            mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
-            computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
+            mean_line_intensities = solve_long_characteristics_NLTE(model, device)
+            print("total time elapsed:", time.time()-starttime, "s")
+
+            if use_ALI:
+                ALI_diag = solve_long_characteristics_ALI_diag(model, device)
+                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
+            else:
+                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
             for lspecidx in range(model.parameters.nlspecs.get()):
                 lspec = model.sources.lines.lineProducingSpecies[lspecidx]
                 if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
@@ -473,7 +594,6 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
                 lspec.population.set(computed_level_pops[lspec.linedata.num.get()].to("cpu"))
                 #Add current level pops to previous level pops
                 previous_level_pops[lspec.linedata.num.get()] = torch.cat((previous_level_pops[lspec.linedata.num.get()], computed_level_pops[lspec.linedata.num.get()].unsqueeze(0)), dim=0)
-            n_its_in_ng_accel += 1
 
             model.dataCollection.infer_data()
 
@@ -482,17 +602,17 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
 
             relative_diff_ng_accel = 0.0
             #only start using the acceleration procedure after accumulating 3 iterations
-            if n_its_in_ng_accel >= 3:#TODO: replace with len(previous_level_pops[0])
+            if len(previous_level_pops[0]) > 3:#TODO: replace with len(previous_level_pops[0])
 
                 for lspecidx in range(model.parameters.nlspecs.get()):
                     lspec = model.sources.lines.lineProducingSpecies[lspecidx]
-                    ng_accel_level_pops = lspec.compute_ng_accelerated_level_pops(previous_level_pops[lspec.linedata.num.get()], device)
+                    ng_accel_level_pops = lspec.compute_ng_accelerated_level_pops(previous_level_pops[lspec.linedata.num.get()][1:], device)
                     relative_diff_ng_accel += torch.mean(relative_error(ng_accel_level_pops, last_ng_accelerated_pops[lspec.linedata.num.get()])).item()
                     last_ng_accelerated_pops[lspec.linedata.num.get()] = ng_accel_level_pops
                 
                 #Use the ng-accelerated populations, if the difference between ng-accelerated iterations is smaller than the difference between the regular iterations
-                if relative_diff_ng_accel < relative_diff_default_its or n_its_in_ng_accel > max_its_between_ng_accel:
-                    print("Using ng-acceleration; using " + str(n_its_in_ng_accel-1) + " iterations")
+                if relative_diff_ng_accel < relative_diff_default_its or len(previous_level_pops[0]) > max_its_between_ng_accel:
+                    print("Using ng-acceleration; using " + str(len(previous_level_pops[0])-1) + " iterations")
                     #redo convergence checking
                     all_species_converged = True
                     for lspecidx in range(model.parameters.nlspecs.get()):
@@ -500,8 +620,8 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
                         if not level_pops_converged(lspec.population.get(device), last_ng_accelerated_pops[lspecidx]):
                             all_species_converged = False
                         lspec.population.set(last_ng_accelerated_pops[lspec.linedata.num.get()].to("cpu"))
+
                     previous_level_pops = [last_ng_accelerated_pops[lspecidx].unsqueeze(0) for lspecidx in range(model.parameters.nlspecs.get())]
-                    n_its_in_ng_accel = 1
 
                     model.dataCollection.infer_data()
             
@@ -513,7 +633,14 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
             print("it:", i)
             all_species_converged = True
             mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
-            computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)#type: ignore
+            print("total time elapsed:", time.time()-starttime, "s")
+
+            if use_ALI:
+                print("using ALI")
+                ALI_diag = solve_long_characteristics_ALI_diag(model, device)
+                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
+            else:
+                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
             for lspecidx in range(model.parameters.nlspecs.get()):
                 lspec = model.sources.lines.lineProducingSpecies[lspecidx]
                 if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):

@@ -8,6 +8,7 @@ min_freq_difference = 1e-100 # assumes 64 bit float for frequency
 min_dist = 1e-100 # assumes 64 bit float for distances
 min_optical_depth = 1e-100 # assumes 64 bit float for optical depth
 min_rel_pop_for_convergence = 1.0e-10 #minimum relative population change for convergence
+min_level_pop = 1e-100 #minimum level population for convergence computations
 convergence_fraction = 0.995 #threshold for converged populations
 
 

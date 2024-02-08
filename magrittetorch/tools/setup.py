@@ -246,7 +246,6 @@ def set_rays_spherical_symmetry(model: Model, nrays: int, uniform: bool = True, 
     rs: list[int]|np.ndarray
     if uniform:
         # Treat every ray as "extra", since "extra" rays are added uniformly anyway
-        print("nrays", nrays)
         nextra = nrays//2-1
         rs = []
     else:
@@ -320,8 +319,6 @@ def set_rays_spherical_symmetry(model: Model, nrays: int, uniform: bool = True, 
     # Normalize the weights
     weight /= np.sum(weight)
 
-    print("direction", direction)
-    
     # Set the direction and the weights in the Magritte model
     model.geometry.rays.direction.set(torch.from_numpy(direction))
     model.geometry.rays.weight   .set(torch.from_numpy(weight))

@@ -9,7 +9,8 @@ from astropy import units
 from astropy.constants import c
 
 class FrequencyEvalHelper:
-    """Lines only act on narrow frequency ranges. This structure helps figuring out which lines are needed per frequency, using a heuristic approach.
+    """Lines only act on narrow frequency ranges. This structure helps figuring out which lines are needed per frequency 
+    to evaluate emissivities and opacities, using a heuristic approach.
     """
 
     #Helper class for evaluating of frequencies, keeping track of which lines need to be evaluated.
@@ -52,3 +53,36 @@ class FrequencyEvalHelper:
                 self.corresponding_lines.append(multi_arange(minids, maxids-minids, device))
 
         
+
+class ALIFreqEvalHelper(FrequencyEvalHelper):
+    """Lines only act on narrow frequency ranges. This structure helps figuring out which lines are needed per frequency, using a heuristic approach.
+    This version acts as if only the line for which we use it to compute the mean line intensity is important, and assumes the frequencies to be ordered per line.
+    This version is only intended for ALI calculations.
+    """
+    def __init__(self, frequencies: torch.Tensor, listlspec: List[LineProducingSpecies], device: torch.device) -> None:
+        self.lineProducingSpecies = listlspec
+        self.original_frequencies = frequencies
+        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, NFREQS]
+        self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [NFREQS]
+        self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [NFREQS]
+        self.deduce_close_lines_ALI(frequencies, device)
+        self.device = device
+
+
+    def deduce_close_lines_ALI(self, base_frequencies: torch.Tensor, device: torch.device) -> None:
+        """Finish the initialization of the ALIFreqEvalHelper. This function is called by the constructor.
+
+        Args:
+            base_frequencies (torch.Tensor): Non-shifted frequencies to use for all positions. Has dimensions [NPOINTS, NFREQS]
+            device (torch.device): Device on which to compute this.
+        """
+        nfreqs = base_frequencies.size(dim=1)
+        for lspec in self.lineProducingSpecies:
+            self.duplicated_frequencies.append(base_frequencies)
+            self.original_frequency_index.append(torch.arange(nfreqs, device=device, dtype=Types.IndexInfo))
+            self.corresponding_lines.append(lspec.get_line_indices_NTLE(device))
+
+    def deduce_close_lines(self, base_frequencies: torch.Tensor, model_velocities: torch.Tensor, device: torch.device) -> None:
+        """NOT IMPLEMENTED. The class ALIFreqEvalHelper is only intended for ALI calculations. Use FrequencyEvalHelper instead.
+        """
+        raise NotImplementedError("ALIFreqEvalHelper is not intended for anything but ALI calculations. Use FrequencyEvalHelper instead.")

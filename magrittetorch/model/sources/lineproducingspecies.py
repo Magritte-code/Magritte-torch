@@ -1,5 +1,6 @@
 from typing import List, Union, Optional, Any, Tuple
 from magrittetorch.utils.storagetypes import StorageTensor, Types, DataCollection, InferredTensor, DelayedListOfClassInstances, InferredTensorPerNLTEIter
+from magrittetorch.algorithms.torch_algorithms import interpolate2D_linear
 from magrittetorch.model.parameters import Parameters
 from magrittetorch.model.sources.linequadrature import LineQuadrature
 from magrittetorch.algorithms.torch_algorithms import multi_arange
@@ -124,6 +125,17 @@ class LineProducingSpecies:
         temp = self.linedata.frequency.get(device)[None, :, None] + self.linequadrature.roots.get(device)[None, None, :] * linewidths_device[:,:, None]
         return temp.flatten(start_dim=1)
 
+    def get_line_weights(self, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+        """Computes the weights of the line quadrature, corresponding to the line frequencies returned by self.get_line_frequencies()
+
+        Args:
+            device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
+
+        Returns:
+            torch.Tensor: Weights of the line quadrature, indexed corresponding to the frequencies from self.get_line_frequencies(). Tensor has dimensions [linequadrature.nquads*linedata.nrad]
+        """
+        return self.linequadrature.weights.get(device).repeat(self.linedata.nrad.get())
+
     def get_n_lines_freqs(self) -> int:
         """Returns number of line frequencies of this species used for NLTE computations
 
@@ -131,7 +143,19 @@ class LineProducingSpecies:
             int: Amount of line frequencies returned by self.get_line_frequencies
         """
         return self.linequadrature.nquads.get()*self.linedata.nrad.get()
-    
+
+    def get_line_indices_NTLE(self, device: torch.device = torch.device("cpu")) -> torch.Tensor:
+        """Returns the line indices for the NLTE computation
+
+        Args:
+            device (torch.device, optional): Device on which to compute and return the result. Defaults to torch.device("cpu").
+
+        Returns:
+            torch.Tensor: Line indices for the NLTE computation. Frequencies corresponding to the same line have the same index. Tensor has dimensions [self.get_n_lines_freqs()]
+        """
+        return torch.arange(self.linedata.nrad.get(), device=device, dtype=Types.IndexInfo).repeat_interleave(self.linequadrature.nquads.get())
+
+
     def get_relevant_line_indices(self, opacity_compute_frequencies: torch.Tensor, sorted_linewidths_device: torch.Tensor, sorted_linefreqs_device: torch.Tensor, device: torch.device = torch.device("cpu"), MAX_DISTANCE_OPACITY_CONTRIBUTION: float = 10.0) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes which line should be evaluated when evaluating line opacities/emissivites at given frequencies. TODO: can be made more efficient by inspecting line width
 
@@ -229,11 +253,11 @@ class LineProducingSpecies:
         return line_opacities, line_emissivities
     
     def evaluate_line_opacities_emissivites_single_line(self, frequencies: torch.Tensor, line_index: torch.Tensor, line_opacities: torch.Tensor, line_emissivities: torch.Tensor, sorted_linefreqs_device: torch.Tensor, sorted_linewidths_device: torch.Tensor, device: torch.device = torch.device("cpu")) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Evaluates the line opacities and emissivites by bruteforce summing contributions from all lines.
+        """Evaluates the line opacities and emissivites for a single line at a time.
 
         Args:
-            frequencies (torch.Tensor): Frequencies at which to evaluate the line opacity/emmissivity. Has dimensions [NPOINTS, NFREQS]
-            line_index (torch.Tensor): Index of the line to evaluate. Has dimensions [NFREQS]
+            frequencies (torch.Tensor): Frequencies at which to evaluate the line opacity/emmissivity. Has dimensions [NPOINTS, NEVAL]
+            line_index (torch.Tensor): Index of the line to evaluate. Has dimensions [NEVAL]
             line_opacities (torch.Tensor): Integrated line opacities. Has dimensions [NPOINTS, self.linedata.nrad]
             line_emissivities (torch.Tensor): Integrated line emissivities. Has dimensions [NPOINTS, self.linedata.nrad]
             sorted_linefreqs_device (torch.Tensor): Sorted line frequencies. Has dimensions [self.linedata.nrad]
@@ -261,14 +285,50 @@ class LineProducingSpecies:
         Returns:
             torch.Tensor: The NG-accelerated level populations. Has dimensions [parameters.npoints, linedata.nlev].
         """
-        #?TODO?: add option for choosing ng acceleration order
-        residual_pops = previous_level_pops.diff(dim=0) #dimensions = [N_PREV_ITS-1, parameters.npoints, linedata.nlev]
+        normalized_level_pops = previous_level_pops / torch.sum(previous_level_pops, dim=2)[:, :, None]
+        residual_pops = normalized_level_pops.diff(dim=0) #dimensions = [N_PREV_ITS-1, parameters.npoints, linedata.nlev]
         residual_matrix = torch.tensordot(residual_pops, residual_pops, dims=([1,2],[1,2])) #dims = [N_PREV_ITS-1, N_PREV_ITS-1]
         ng_accel_order = residual_matrix.shape[0]
         ones = torch.ones(ng_accel_order, device=device, dtype=Types.LevelPopsInfo)
         ng_coefficients = torch.linalg.solve(residual_matrix, ones) #dims = [N_PREV_ITS-1]
         ng_coefficients = ng_coefficients / torch.sum(ng_coefficients)#normalize the coefficients
         ng_accelerated_pops = torch.einsum("i,ijk->jk", ng_coefficients, previous_level_pops[1:,:,:]) #dims = [parameters.npoints, linedata.nlev]
+        #put negative levelpops to 0 and renormalize
+        ng_accelerated_pops[ng_accelerated_pops < 0.0] = 0.0
+        ng_accelerated_pops = ng_accelerated_pops * self.population_tot.get(device)[:, None] / torch.sum(ng_accelerated_pops, dim=1)[:, None]
         return ng_accelerated_pops
+
+    def compute_line_cooling(self, current_level_pops: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """
+        Computes the line cooling rate for each point, based on the given level populations
+
+        Args:
+            current_level_pops (torch.Tensor): The current level populations. Has dimensions [parameters.npoints, linedata.nlev].
+            device (torch.device): The device on which to compute.
+
+        Returns:
+            torch.Tensor: The line cooling rate. Has dimensions [parameters.npoints] and units W/m^3
+        """
+        # The cooling rate is given by the net rates of the collisional transitions times the energy difference between the levels
+        energy = self.linedata.energy.get(device)#dims = [linedata.nlev]
+        temperature = self.dataCollection.get_data("gas temperature").get(device)#dims = [parameters.npoints]
+        abundance = self.dataCollection.get_data("species abundance").get(device)#dims: [parameters.npoints, parameters.nspecs]
+        cooling_rate = torch.zeros(self.parameters.npoints, device=device, dtype=Types.LevelPopsInfo)
+        for colpar in self.linedata.colpar:
+            upper_levels = colpar.icol.get(device)
+            lower_levels = colpar.jcol.get(device)
+
+            #TODO: Refactor this; reuse of a code snippet code in solvers.py::compute_level_populations_statistical_equilibrium
+            #Adjusting the abundance, depending on whether we have ortho or para H2
+            colpar_abundance = colpar.adjust_abundace_for_ortho_para_h2(temperature, abundance[:, colpar.num_col_partner.get()])#dims: [parameters.npoints]
+            
+            collisional_rate_upper_to_lower = interpolate2D_linear(colpar.tmp.get(device), colpar.Cd.get(device), temperature) * colpar_abundance[:, None]#dims: [parameters.npoints, colpar.ncol]
+            collisional_rate_lower_to_upper = interpolate2D_linear(colpar.tmp.get(device), colpar.Ce.get(device), temperature) * colpar_abundance[:, None]
+            total_rate_upper_to_lower = collisional_rate_upper_to_lower * current_level_pops[:, upper_levels]#dims = [parameters.npoints, colpar.ncol]
+            total_rate_lower_to_upper = collisional_rate_lower_to_upper * current_level_pops[:, lower_levels]#dims = [parameters.npoints, colpar.ncol]
+            energy_diff = energy[upper_levels] - energy[lower_levels]#dims = [colpar.ncol]
+            cooling_rate += torch.sum((total_rate_lower_to_upper - total_rate_upper_to_lower) * energy_diff[None, :], dim=1)#dims = [parameters.npoints]
+            
+        return cooling_rate
 
 

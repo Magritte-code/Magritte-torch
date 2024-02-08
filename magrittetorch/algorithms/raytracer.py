@@ -1,5 +1,6 @@
 # TODO: will contain everything needed for tracing rays on gpu
 # TODO: think about memory management when implementing
+# TODO: deprecate this file, as it is not used anymore; see geometry.py for the new implementation
 
 from magrittetorch.model.model import Model
 from magrittetorch.utils.memorymapping import MemoryManager
