@@ -9,5 +9,5 @@ class TestNumeric:
     # @pytest.mark.incremental
     class TestVanZadelhoff1:
         #testing whether the results are correct
-        def vanZadelhoff1a_setup_and_run(self):
+        def test_vanZadelhoff1a_setup_and_run(self):
             vanZadelhoff_1_setup_and_run(nosave=True, a_or_b='a')
