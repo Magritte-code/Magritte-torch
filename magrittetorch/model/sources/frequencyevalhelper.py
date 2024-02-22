@@ -25,7 +25,7 @@ class FrequencyEvalHelper:
         """
         self.lineProducingSpecies = listlspec
         self.original_frequencies = frequencies
-        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, probably>=NFREQS]
+        # self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, probably>=NFREQS]
         self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [probably>=NFREQS]
         self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [probably>=NFREQS]
         self.deduce_close_lines(frequencies, model_velocities, device)
@@ -43,7 +43,7 @@ class FrequencyEvalHelper:
         max_shift = torch.sqrt(torch.max(torch.sum(torch.pow(model_velocities, 2.0), dim=1)))/c.value
         for lspec in self.lineProducingSpecies:
             minids, maxids = lspec.get_global_bound_relevant_line_indices(base_frequencies[0, :], max_shift, device)
-            self.duplicated_frequencies.append(base_frequencies.repeat_interleave(maxids-minids, dim=1))
+            # self.duplicated_frequencies.append(base_frequencies.repeat_interleave(maxids-minids, dim=1))
             self.original_frequency_index.append(torch.arange(nfreqs, device=device).repeat_interleave(maxids-minids))
             # If no lines are found, the multi_arange will crash. As that snippet of code should be optimized (so no adding if-clauses), it is better to create a workaround here.
             # We just manually set the corresponding lines to empty in that case.
@@ -62,7 +62,7 @@ class ALIFreqEvalHelper(FrequencyEvalHelper):
     def __init__(self, frequencies: torch.Tensor, listlspec: List[LineProducingSpecies], device: torch.device) -> None:
         self.lineProducingSpecies = listlspec
         self.original_frequencies = frequencies
-        self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, NFREQS]
+        # self.duplicated_frequencies: List[torch.Tensor] = [] #frequencies to use per LineProducingSpecies #dims for each: [parameters.npoints, NFREQS]
         self.original_frequency_index: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [NFREQS]
         self.corresponding_lines: List[torch.Tensor] = [] # per LineProducingSpecies #dims for each: [NFREQS]
         self.deduce_close_lines_ALI(frequencies, device)
@@ -78,7 +78,7 @@ class ALIFreqEvalHelper(FrequencyEvalHelper):
         """
         nfreqs = base_frequencies.size(dim=1)
         for lspec in self.lineProducingSpecies:
-            self.duplicated_frequencies.append(base_frequencies)
+            # self.duplicated_frequencies.append(base_frequencies)
             self.original_frequency_index.append(torch.arange(nfreqs, device=device, dtype=Types.IndexInfo))
             self.corresponding_lines.append(lspec.get_line_indices_NTLE(device))
 

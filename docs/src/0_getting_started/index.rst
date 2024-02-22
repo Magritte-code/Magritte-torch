@@ -10,4 +10,3 @@ More background on the installation process of Magrittetorch can be found in the
 
    0_prerequisites
    1_quickstart
-..    2_installation

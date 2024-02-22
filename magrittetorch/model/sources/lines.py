@@ -13,7 +13,8 @@ class Lines:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.lineProducingSpecies : DelayedListOfClassInstances[LineProducingSpecies] = DelayedListOfClassInstances(self.parameters.nlspecs, lambda i: LineProducingSpecies(self.parameters, self.dataCollection, i), "lineProducingSpecies"); dataCollection.add_delayed_list(self.lineProducingSpecies)
+        self.lineProducingSpecies : DelayedListOfClassInstances[LineProducingSpecies] = DelayedListOfClassInstances(self.parameters.nlspecs, lambda i: LineProducingSpecies(self.parameters, self.dataCollection, i), "lineProducingSpecies")#: Line data for each species which produces lines
+        dataCollection.add_delayed_list(self.lineProducingSpecies)
 
     def get_total_number_lines(self) -> int:
         """Return the total number of lines in the model
@@ -110,7 +111,8 @@ class Lines:
             #For a small shift, we can just multiply average opacity with distance to obtain the optical depth
             line_optical_depth = ((curr_opacity+prev_opacity)[:, freqhelper.original_frequency_index[i]]*distance_increments[:, None]*0.5)#dims: [NPOINTS, n_eval_freqs]
             #For a large shift, we analytically integrate the line profile function of an averaged line width
-            non_shifted_freqs = freqhelper.duplicated_frequencies[i][original_point_indices,:]#dims: [NPOINTS, n_eval_freqs]
+            non_shifted_freqs = freqhelper.original_frequencies[original_point_indices[:, None], freqhelper.original_frequency_index[i][None, :]]#dims: [NPOINTS, n_eval_freqs]
+            # non_shifted_freqs = freqhelper.duplicated_frequencies[i][original_point_indices,:]#dims: [NPOINTS, n_eval_freqs]
             corresponding_lines = freqhelper.corresponding_lines[i]#dims: [n_eval_freqs]
             #err, forgot to add factor sqrt2 to linewidths
             mean_linewidth = 0.5*(lspec.sorted_linewidths.get(device)[curr_point_indices[large_shift], :]+lspec.sorted_linewidths.get(device)[prev_point_indices[large_shift], :])#dims: [sum(large_shift), NLINES]
@@ -174,7 +176,8 @@ class Lines:
             emissivities = lspec.line_emissivities.get(device)
             sorted_linefreqs = lspec.sorted_linefreqs.get(device)
             sorted_linewidths = lspec.sorted_linewidths.get(device)
-            frequencies_to_eval = freqEvalHelper.duplicated_frequencies[i][origin_point_indices, :] * doppler_shift[:, None]
+            frequencies_to_eval = freqEvalHelper.original_frequencies[origin_point_indices[:, None], freqEvalHelper.original_frequency_index[i][None, :]] * doppler_shift[:, None]#dims: [NPOINTS, n_eval_freqs]
+            # frequencies_to_eval = freqEvalHelper.duplicated_frequencies[i][origin_point_indices, :] * doppler_shift[:, None]
             line_opacities, line_emissivities = lspec.evaluate_line_opacities_emissivites_single_line(frequencies_to_eval, freqEvalHelper.corresponding_lines[i], opacities[curr_point_indices], emissivities[curr_point_indices], sorted_linefreqs, sorted_linewidths[curr_point_indices, :], device)
             n_eval_freqs = freqEvalHelper.corresponding_lines[i].size(dim=0)
             expanded_freq_index = freqEvalHelper.original_frequency_index[i].expand(npoints, n_eval_freqs)

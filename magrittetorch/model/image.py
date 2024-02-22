@@ -11,8 +11,10 @@ import numpy as np
 
 
 class ImageType(Enum):
-    Intensity = 0
-    OpticalDepth = 1#err, for now only intensity is implemented
+    """Available image types
+    """
+    Intensity = 0#: Intensity image
+    OpticalDepth = 1#: Optical depth image
 
 #for now, I am disconnecting the image class from any storage capabilities, as it will inevitably lead to storage issues
 class Image:
@@ -20,22 +22,22 @@ class Image:
         self.storage_dir : str = "images/image_"+str(image_index)+"/"
         self.parameters: Parameters = params
         self.dataCollection: DataCollection = dataCollection
-        self.imageType: Parameter[ImageType] = Parameter[ImageType]("imageType")#; self.dataCollection.add_local_parameter(self.imageType)
+        self.imageType: Parameter[ImageType] = Parameter[ImageType]("imageType")#: Image type
         self.imageType.set(imageType)
-        self.ray_direction: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"ray_direction", tensor=ray_direction/torch.norm(ray_direction)); #self.dataCollection.add_data(self.ray_direction, "ray direction")
-        self.npix: Parameter[int] = Parameter[int](self.storage_dir+"npix")#TODO: maybe add constraints between parameters?
+        self.ray_direction: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"ray_direction", tensor=ray_direction/torch.norm(ray_direction))#: Ray direction; dtype= :py:attr:`.Types.GeometryInfo` , dims = [3], unit = units.dimensionless_unscaled
+        self.npix: Parameter[int] = Parameter[int](self.storage_dir+"npix")#: number of pixels in the image
         # self.nxpix: Parameter[int] = Parameter[int](self.storage_dir+"nxpix")
         # self.nypix: Parameter[int] = Parameter[int](self.storage_dir+"nypix")
-        self.nfreqs: Parameter[int] = Parameter[int](self.storage_dir+"nfreqs")
-        self.freqs: StorageTensor = StorageTensor(Types.FrequencyInfo, [self.nfreqs], units.Hz, self.storage_dir+"freqs", tensor=freqs)#; self.dataCollection.add_data(self.freqs, "frequencies")
+        self.nfreqs: Parameter[int] = Parameter[int](self.storage_dir+"nfreqs")#: number of frequencies in the image
+        self.freqs: StorageTensor = StorageTensor(Types.FrequencyInfo, [self.nfreqs], units.Hz, self.storage_dir+"freqs", tensor=freqs)#: Frequencies in the image; dtype= :py:attr:`.Types.FrequencyInfo`, dims=[:py:attr:`nfreqs`], unit = units.Hz
 
         # The images themselves define some coordinate system, this is copied into these StorageTensors
-        self.image_direction_x: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_x"); #self.dataCollection.add_data(self.image_direction_x, "image direction x")
-        self.image_direction_y: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_y"); #self.dataCollection.add_data(self.image_direction_y, "image direction y")
-        self.image_direction_z: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_z"); #self.dataCollection.add_data(self.image_direction_z, "image direction z")
+        self.image_direction_x: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_x") #: Image direction x; dtype= :py:attr:`.Types.GeometryInfo`, dims=[3], unit = units.dimensionless_unscaled
+        self.image_direction_y: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_y") #: Image direction y; dtype= :py:attr:`.Types.GeometryInfo`, dims=[3], unit = units.dimensionless_unscaled
+        self.image_direction_z: StorageTensor = StorageTensor(Types.GeometryInfo, [3], units.dimensionless_unscaled, self.storage_dir+"image_direction_z") #: Direction in which the image is taken; dtype= :py:attr:`.Types.GeometryInfo`, dims=[3], unit = units.dimensionless_unscaled
 
-        self.imX: StorageTensor = StorageTensor(Types.GeometryInfo, [self.npix], units.m, self.storage_dir+"imX")
-        self.imY: StorageTensor = StorageTensor(Types.GeometryInfo, [self.npix], units.m, self.storage_dir+"imY")
+        self.imX: StorageTensor = StorageTensor(Types.GeometryInfo, [self.npix], units.m, self.storage_dir+"imX")#: Image pixel x coordinates; dtype= :py:attr:`.Types.GeometryInfo`, dims=[:py:attr:`npix`], unit = units.m
+        self.imY: StorageTensor = StorageTensor(Types.GeometryInfo, [self.npix], units.m, self.storage_dir+"imY")#: Image pixel y coordinates; dtype= :py:attr:`.Types.GeometryInfo`, dims=[:py:attr:`npix`], unit = units.m
 
         # self.pixX: StorageTensor = StorageTensor(Types.GeometryInfo, [self.nxpix], units.m, self.storage_dir+"pixX")
         # self.pixY: StorageTensor = StorageTensor(Types.GeometryInfo, [self.nypix], units.m, self.storage_dir+"pixY")
@@ -43,7 +45,7 @@ class Image:
         # Note: I saves the image data; for most images, this is the intensity, but it can also be the optical depth
         # Thus the units might need be changed manually when setting the image type...
         # Note2: As images are currently not saved in a hdf5 file, we do not yet need to store the unit of the image data
-        self.I: StorageTensor = StorageTensor(Types.FrequencyInfo, [self.npix, self.nfreqs], units.W*units.m**-2*units.Hz**-1*units.sr**-1, self.storage_dir+"I")#; self.dataCollection.add_data(self.I, "intensity")
+        self.I: StorageTensor = StorageTensor(Types.FrequencyInfo, [self.npix, self.nfreqs], units.W*units.m**-2*units.Hz**-1*units.sr**-1, self.storage_dir+"I")#: Image data at each pixel, at each frequency; Note: the unit assumes the intensity is imaged, when the optical depth is imaged, the unit is instead units.Hz**-1*units.sr**-1; dtype= :py:attr:`.Types.FrequencyInfo`, dims=[:py:attr:`npix`, :py:attr:`nfreqs`], unit = units.W*units.m**-2*units.Hz**-1*units.sr**-1
 
     #TODO: add option for imaging limited region
     def setup_image(self, geometry: Geometry, Nxpix: int, Nypix: int, image_type: ImageType = ImageType.Intensity) -> None:

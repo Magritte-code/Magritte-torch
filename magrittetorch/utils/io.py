@@ -16,7 +16,7 @@ class IO:
         Args:
             save_location (str): Save location (for loading/saving)
         """
-        self.save_location = save_location
+        self.save_location: str = save_location#: Save location
 
     def read(self, dataCollection : DataCollection, legacy_mode : bool = False) -> None:
         """Reads all stored values from a given DataCollection (stored in hdf5 format)
@@ -117,7 +117,7 @@ class IO:
 
         Raises:
             ValueError: If not all data is already set.
-            TypeError: Dev error: when reading a storagetypes.storageTypes for which reading has not yet been implemented
+            TypeError: Dev error: when reading a storagetypes.storageTypes for which writing has not yet been implemented
         """
         if not dataCollection.is_data_complete():
             raise ValueError("Data set is not yet complete. Please fill in the missing data points")
@@ -210,15 +210,15 @@ class IO:
             except KeyError:
                 parameter.set(legacy_conversion_function(file.attrs[parameter_path]))#legacy conversion function acting on an attribute
         else:
-            try:
-                path : str; attribute : str 
+            path : str; attribute : str 
+            if "/" in parameter_path:
                 #mypy doesnt allow for unpacking of strings, thus ignore the warnings
                 path, attribute = parameter_path.rsplit("/", 1)#type: ignore
                 if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
                     parameter.set(parameter.get_enum_type()(file[path].attrs[attribute]))
                 else:
                     parameter.set(file[path].attrs[attribute])
-            except ValueError:#guard against not enough parameters to unpack
+            else:
                 if isinstance(parameter, EnumParameter):#Enums being annoying, automatically being set to not-None
                     parameter.set(parameter.get_enum_type()(file.attrs[parameter_path]))
                 else:
@@ -235,27 +235,21 @@ class IO:
         """
         path : str; attribute : str 
         #mypy doesnt allow for unpacking of strings, thus ignore the warnings
-        try:
+        if "/" in storage_path:
             path, attribute = storage_path.rsplit("/", 1)#type: ignore
             paramvalue = parameter.get()
-            # file[path].attrs[attribute] = parameter.get()
             #convert enums to their values
             if isinstance(parameter, EnumParameter):
-                # dt = h5py.enum_dtype(type(paramvalue))
                 file[path].attrs[attribute] = paramvalue.value
             else:
                 file[path].attrs[attribute] = paramvalue
-        except ValueError:#guard against not enough parameters to unpack
+        else:
             paramvalue = parameter.get()
-            # file[path].attrs[attribute] = parameter.get()
             #convert enums to their values
             if isinstance(paramvalue, Enum):
-                # dt = h5py.enum_dtype(type(paramvalue))
                 file.attrs[storage_path] = paramvalue.value
             else:
                 file.attrs[storage_path] = paramvalue
-
-
 
     
         

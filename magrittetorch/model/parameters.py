@@ -11,13 +11,13 @@ class Parameter(Generic[T]):
         Generic (_type_): Type of the value of the parameter
     """
     def __init__(self, name: str, legacy_converter: Optional[Tuple[str, Optional[Callable[[Any], T]]]] = None) -> None:
-        self.name: str = name
+        self.name: str = name#: name of the parameter
         self.legacy_name: str = self.name
         self.legacy_conversion_function: Optional[Callable[[Any], T]] = None
         if legacy_converter is not None:
             self.legacy_name = legacy_converter[0]
             self.legacy_conversion_function = legacy_converter[1]
-        self.value : Optional[T] = None
+        self.value : Optional[T] = None#: value of the parameter; None if not yet set
     
     def __str__(self) -> str:
         return "Parameter " + self.name + " with current value: " + str(self.value)
@@ -35,8 +35,10 @@ class Parameter(Generic[T]):
         self.value = value
 
     def set(self, value : T) -> None:
-        """Setter for the value. Returns a ValueError if an old value has already been set and the new value is not equal to the old value.
+        """Setter for the value.
 
+        Raises:
+            ValueError: If the parameter has already been set and the new value is not equal to the old value
         Args:
             value (T): New value for parameter
         """
@@ -76,23 +78,27 @@ class EnumParameter(Parameter[T], Generic[T, TYPE]):
         self.enum_type: TYPE = enum_type
     
     def get_enum_type(self) -> TYPE:
+        """Getter for the enum type
+
+        Returns:
+            TYPE: The enum type
+        """
         return self.enum_type
 
 
 class Parameters:
-    """List of Parameter's
-        pass
+    """Collection of global model Parameter's
 
     Yields:
         Parameter: parameters for a model
     """
 
     def __init__(self) -> None:
-        self.npoints = Parameter[int]("npoints")
-        self.nrays = Parameter[int]("nrays")
-        self.nboundary = Parameter[int]("nboundary")
-        self.nspecs = Parameter[int]("nspecs")
-        self.nlspecs = Parameter[int]("nlspecs")
+        self.npoints: Parameter[int] = Parameter[int]("npoints")#: number of points in a model
+        self.nrays: Parameter[int] = Parameter[int]("nrays")#: number of rays to use for NLTE radiative transfer
+        self.nboundary: Parameter[int] = Parameter[int]("nboundary")#: number of boundary points in a model
+        self.nspecs: Parameter[int] = Parameter[int]("nspecs")#: number of species in a model
+        self.nlspecs: Parameter[int] = Parameter[int]("nlspecs")#: number of species with line data in a model
 
     def __iter__(self) -> Iterator[Parameter[T]]:
         """Iterator for the parameters of a model

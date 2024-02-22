@@ -10,9 +10,13 @@ class Rays:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.direction: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nrays, 3], units.dimensionless_unscaled, storagedir+"direction"); self.dataCollection.add_data(self.direction, "ray direction") # Direction vectors
-        self.weight: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nrays], units.dimensionless_unscaled, storagedir+"weight"); self.dataCollection.add_data(self.weight, "ray weight") # Corresponding weights
-        self.antipod: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.nrays], units.dimensionless_unscaled, self._infer_antipod); self.dataCollection.add_inferred_dataset(self.antipod, "ray antipod") # Index of antipod
+        self.direction: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nrays, 3], units.dimensionless_unscaled, storagedir+"direction")#: Direction vectors for rays used for NLTE radiative transfer; dtype = :py:attr:`Types.GeometryInfo`, dims = [:py:attr:`.Parameters.nrays`, 3], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.direction, "ray direction") # Direction vectors
+        self.weight: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nrays], units.dimensionless_unscaled, storagedir+"weight")#: Corresponding integration weights for the rays; dtype = :py:attr:`Types.GeometryInfo`, dims = [:py:attr:`.Parameters.nrays`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.weight, "ray weight") # Corresponding weights
+        #TODO: deprecate the antipod thingy, we are not using it
+        self.antipod: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.nrays], units.dimensionless_unscaled, self._infer_antipod)#: Indices of the antipodal rays; dtype = :py:attr:`Types.IndexInfo`, dims = [:py:attr:`.Parameters.nrays`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_inferred_dataset(self.antipod, "ray antipod") # Index of antipod
 
     def _infer_antipod(self) -> torch.Tensor:
         """Infers the antipodal ray indices, assuming that all ray directions have antipods

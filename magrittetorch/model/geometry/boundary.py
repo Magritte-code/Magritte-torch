@@ -11,30 +11,40 @@ storagedir : str = "geometry/boundary/"
 
 class BoundaryCondition(Enum):
     """
-    Type of ng-acceleration to use
+    Type of boundary condition
     """
-    Zero : int = 0
-    Thermal : int = 1
-    CMB : int = 2
+    Zero : int = 0#: Zero intensity at boundary
+    Thermal : int = 1#: Thermal boundary condition
+    CMB : int = 2#: Thermal boundary at CMB temperature
 
 class BoundaryType(Enum):
-    Sphere1D: int = 0
-    Sphere3D: int = 1
-    AxisAlignedCube: int = 2
+    """
+    Geometry of the boundary
+    """
+    Sphere1D: int = 0#: 1D sphere
+    Sphere3D: int = 1#: 3D sphere
+    AxisAlignedCube: int = 2#: Axis aligned cube
 
-#TODO: fully implement cube boundary
+
 class Boundary:
     
     def __init__(self, params : Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection: DataCollection = dataCollection
-        self.boundary2point: StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary2point"); self.dataCollection.add_data(self.boundary2point, "boundary2point") # maps boundary index \in[0, nboundary-1] to point index \in[0, npoints-1]
-        self.boundary_condition: StorageTensor = StorageTensor(Types.Enum, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary_condition"); self.dataCollection.add_data(self.boundary_condition, "boundary_condition") #contains the boundary conditions for each boundary point
-        self.boundary_temperature: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nboundary], units.K, storagedir+"boundary_temperature"); self.dataCollection.add_data(self.boundary_temperature, "boundary_temperature") # contains the CMB temperature corresponding to incoming photons
-        self.point2boundary: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_point2boundary); self.dataCollection.add_inferred_dataset(self.point2boundary, "point2boundary") # maps point index \in[0, npoints-1] to boundary index \in[0, nboundary-1]
-        self.is_boundary_point: InferredTensor = InferredTensor(Types.Bool, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_is_boundary_points); self.dataCollection.add_inferred_dataset(self.is_boundary_point, "is_boundary_point") # contains whether or not the given point is a boundary point
-        self.boundaryType: EnumParameter[BoundaryType, type[BoundaryType]] = EnumParameter[BoundaryType, type[BoundaryType]](BoundaryType, "boundaryType", ("spherical_symmetry", self.__legacy_convert_boundaryType)); self.dataCollection.add_local_parameter(self.boundaryType)
-        self.center: InferredTensor = InferredTensor(Types.GeometryInfo, [3], units.m, self._infer_center); self.dataCollection.add_inferred_dataset(self.center, "model center") #contains the center of the model, used for computing which part of the boundary is necessary
+        self.boundary2point: StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary2point")#: maps boundary index \in[0, :py:attr:`.Parameters.nboundary`-1] to point index \in[0, :py:attr:`.Parameters.npoints`-1]; dtype= :attr:`.Types.IndexInfo`, dims=[:py:attr:`.Parameters.nboundary`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.boundary2point, "boundary2point") # maps boundary index \in[0, nboundary-1] to point index \in[0, npoints-1]
+        self.boundary_condition: StorageTensor = StorageTensor(Types.Enum, [self.parameters.nboundary], units.dimensionless_unscaled, storagedir+"boundary_condition")#: contains the :py:class:`.BoundaryCondition` for each boundary point; dtype= :attr:`.Types.Enum`, dims=[:py:attr:`.Parameters.nboundary`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.boundary_condition, "boundary_condition")
+        self.boundary_temperature: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.nboundary], units.K, storagedir+"boundary_temperature")#: contains the boundary temperature corresponding to incoming photons; dtype= :attr:`.Types.GeometryInfo`, dims=[:py:attr:`.Parameters.nboundary`], unit = units.K
+        self.dataCollection.add_data(self.boundary_temperature, "boundary_temperature")
+        self.point2boundary: InferredTensor = InferredTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_point2boundary)#: maps point index \in[0, :py:attr:`.Parameters.npoints`-1] to boundary index \in[0, :py:attr:`.Parameters.nboundary`-1]; dtype= :attr:`.Types.IndexInfo`, dims=[:py:attr:`.Parameters.npoints`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_inferred_dataset(self.point2boundary, "point2boundary")
+        self.is_boundary_point: InferredTensor = InferredTensor(Types.Bool, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_is_boundary_points)#: contains whether or not the given point is a boundary point; dtype= :attr:`.Types.Bool`, dims=[:py:attr:`.Parameters.npoints`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_inferred_dataset(self.is_boundary_point, "is_boundary_point") # contains whether or not the given point is a boundary point
+        self.boundaryType: EnumParameter[type[BoundaryType]] = EnumParameter[BoundaryType, type[BoundaryType]](BoundaryType, "boundaryType", ("spherical_symmetry", self.__legacy_convert_boundaryType))#: Contains the :py:class:`BoundaryType` of the model; dtype= :class:`.EnumParameter`, dims=[:py:class:`.BoundaryType`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_local_parameter(self.boundaryType)
+        self.center: InferredTensor = InferredTensor(Types.GeometryInfo, [3], units.m, self._infer_center)#: Contains the center of the model, used for computing which part of the boundary is necessary in each direction; dtype= :attr:`.Types.GeometryInfo`, dims=[3], unit = units.m
+        self.dataCollection.add_inferred_dataset(self.center, "model center") #contains the center of the model, used for computing which part of the boundary is necessary
 
     def _infer_point2boundary(self) -> torch.Tensor:
         """Infers the tensor which maps points to boundary points.

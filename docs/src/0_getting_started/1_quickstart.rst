@@ -6,18 +6,6 @@ Quickstart
 .. Warning::
     Please ensure that the :ref:`prerequisites <link-prerequisites>` are in place before continuing with the installation.
 
-Clone
-*****
-
-For now, Magrittetorch has to be installed from source, but might be available using pip in the future.
-Magrittetorch can be installed from its source code, which can be cloned using:
-
-.. code-block:: shell
-
-    git clone https://github.com/Magritte-code/Magritte-torch.git
-
-from our `GitHub <https://github.com/Magritte-code/Magritte-torch>`_ repository.
-
 
 Setup
 *****
@@ -35,11 +23,27 @@ and activate it with:
     conda activate magrittetorch
 
 This environment has to be active whenever Magrittetorch is installed or used!
-Proceed by installing Magrittetorch (including its python dependencies) with pip, by using the following command from the root of the cloned repository:
+Proceed by installing the latest version of Magrittetorch (including its python dependencies) with pip:
 
 .. code-block:: shell
 
-    pip install .
+    pip install git+https://github.com/Magritte-code/Magritte-torch.git
+
+
+Clone (optional)
+****************
+
+If you want to make changes to the source code, you can instead clone the repository using:
+
+.. code-block:: shell
+
+    git clone https://github.com/Magritte-code/Magritte-torch.git
+
+Afterwards, go to the root directory of the cloned repository and install the package in editable mode:
+
+.. code-block:: shell
+
+    pip install -e .
 
 
 Run

@@ -8,6 +8,7 @@ import astropy
 
 T = TypeVar('T')
 
+
 class StorageTensor():
     """Dataset which stores a torch.Tensor
     """
@@ -115,7 +116,7 @@ class StorageTensor():
         return self.get().numpy(force=True)*self.unit
 
 
-    def get(self, device: Optional[torch.device] = None) -> torch.Tensor:
+    def get(self, device: Optional[torch.device] = None, pin: bool = True) -> torch.Tensor:
         """Returns the stored torch.Tensor. Optionally returns a reference to the tensor on the specified device, without remapping if already mapped to that device.
 
         Args:
@@ -131,6 +132,8 @@ class StorageTensor():
             raise ValueError("The data has not yet been set for " +str(self.relative_storage_location))
         #if device is specified, grab the reference to the already mapped tensor
         if device is not None:
+            if not pin:
+                return self.tensor.to(device)
             #map to device if not already present
             if device not in self.tensormap:
                 self.tensormap[device] = self.tensor.to(device)
@@ -163,7 +166,7 @@ class InferredTensor():
 
         Args:
             dtype (torch.dtype): The data type of the stored data
-            dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension_
+            dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension
             infer_function (Callable[[] torch.Tensor]): function which returns the inferred data, if called after the data has been fully set
             legacy_converter (Optional[Tuple[str, Optional[Callable[[Any], torch.Tensor]]]]): The location at which this torch.Tensor is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             relative_storage_location (Optional[str]): Location where to store/read the tensor; if None, then the data will not be stored
@@ -269,11 +272,12 @@ class InferredTensor():
         """
         return self.get().numpy(force=True)*self.unit
 
-    def get(self, device: Optional[torch.device] = None) -> torch.Tensor:
+    def get(self, device: Optional[torch.device] = None, pin = True) -> torch.Tensor:
         """Returns the stored torch.Tensor. Optionally returns a reference to the tensor on the specified device, without remapping if already mapped to that device.
 
         Args:
             device (Optional[torch.device]): if None, return the tensor on cpu. Else, return a reference to the tensor on this device.
+            pin (bool): if True, the tensor will be pinned in memory
 
         Raises:
             ValueError: If no data has yet been stored
@@ -285,6 +289,8 @@ class InferredTensor():
             raise ValueError("The data has not yet been set for " +str(self.relative_storage_location))
         #if device is specified, grab the reference to the already mapped tensor
         if device is not None:
+            if not pin:
+                return self.tensor.to(device)
             #map to device if not already present
             if device not in self.tensormap:
                 self.tensormap[device] = self.tensor.to(device)
@@ -330,7 +336,7 @@ class StorageNdarray():
 
         Args:
             dtype (np.dtype): The data type of the stored data
-            dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension_
+            dims (List[Union[Parameter[int], int, None]]): The dimensions to check; None is used for not checking the dimension
             relative_storage_location (str): The location at which this torch.Tensor is stored (relative to the model name)
             legacy_converter (Optional[Tuple[str, Callable[[Any], np.ndarray[any, any]]]]): The location at which this np.ndarray is stored in C++ magritte (relative to the model name) + optionally a method to convert the data
             array (Optional[np.ndarray[Any, Any]]):  Array to store and check dimensions of; if None, then dimensions are not checked. The array has to be filled in later on_
@@ -456,7 +462,7 @@ class DelayedListOfClassInstances(Generic[T]):
     Implements a very limited subset of list functions.
 
     Args:
-        Generic (_type_): Type of the class instance. Must support initialization with extra index in constructor for identifying different 
+        Generic (_type_): Type of the class instance. Must support initialization with extra index in constructor for identifying different class instances
     """
     def __init__(self, length_param : Parameter[int], class_init_function : Callable[[int], T], instance_name : str) -> None:
         """Constructor for the Delay list of class instances
@@ -477,8 +483,16 @@ class DelayedListOfClassInstances(Generic[T]):
         self.list = [self.class_init_function(i) for i in range(self.length_param.get())]
 
     def get(self) -> List[T]:
+        """Returns the list of class instances
+
+        Raises:
+            ValueError: If the list has not yet been initialized
+
+        Returns:
+            List[T]: The list of class instances
+        """
         if self.list is None:
-            raise ValueError("Not yet set TODO: better error message")
+            raise ValueError("Dev error: This list has not yet been constructed.")
         return self.list
 
     def __getitem__(self, i : int) -> T:
@@ -648,14 +662,15 @@ class DataCollection():
     #TODO: maybe add inspection capabilities for figuring out for each parameter which dataset's dimensions are influenced; might be useful for debugging
     
 class Types:
-    """Contains expected types for tensor data. Summarized together such that tweaking them is more simple
+    """Contains expected datatypes for torch.Tensor data. Summarized together such that tweaking them is more simple
     """
-    GeometryInfo = torch.float64 #64 bit float # for positions, velocities, densities, temperatures
-    IndexInfo = torch.int64 #64 bit signed int # for index information
-    LevelPopsInfo = torch.float64 #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
-    #TODO: check if more accurate workaround can be added
-    FrequencyInfo = torch.float64 #64 bit float; might work with 32 bit floats instead
-    Enum = torch.int64 #64 bit signed int for enums, as the enum values themselves is not a native pytorch datatype
-    Bool = torch.bool #boolean # for truth values
-    NpString = np.dtype('S') #use null-terminated objects to store strings in hdf5; unicode is not supported
+    GeometryInfo = torch.float64#: for positions, velocities, densities, temperatures
+    IndexInfo = torch.int64 #: for index information
+    LevelPopsInfo = torch.float64 #: for level population related information
+    #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
+    FrequencyInfo = torch.float64 #: for frequency-related information
+    Enum = torch.int64 #: for enums
+    #64 bit signed int for enums, as the enum values themselves is not a native pytorch datatype
+    Bool = torch.bool #: for truth values
+    NpString = np.dtype('S') #: use null-terminated objects to store strings in hdf5; unicode is not supported
 

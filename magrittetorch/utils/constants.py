@@ -10,7 +10,7 @@ min_optical_depth = 1e-100 # assumes 64 bit float for optical depth
 min_rel_pop_for_convergence = 1.0e-10 #minimum relative population change for convergence
 min_level_pop = 1e-100 #minimum level population for convergence computations
 convergence_fraction = 0.995 #threshold for converged populations
-
+population_inversion_fraction = 1.01 #threshold for population inversion
 
 class astropy_const:
     """This class contains some physical constants defined in Magritte, with proper astropy units

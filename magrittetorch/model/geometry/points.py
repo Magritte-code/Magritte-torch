@@ -11,10 +11,14 @@ class Points:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.position: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m, storagedir+"position"); self.dataCollection.add_data(self.position, "position") # Position coordinates
-        self.velocity: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m/units.s, storagedir+"velocity", legacy_converter=[storagedir+"velocity", self._legacy_import_velocity]); self.dataCollection.add_data(self.velocity, "velocity") # Velocity vectors (in m/s)
-        self.n_neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, storagedir+"n_neighbors"); self.dataCollection.add_data(self.n_neighbors, "n_neighbors") # number of neighbors per point
-        self.neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [None], units.dimensionless_unscaled, storagedir+"neighbors"); self.dataCollection.add_data(self.neighbors, "neighbors") # linearized neighbors vector
+        self.position: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m, storagedir+"position")#: Position coordinates; dtype= :attr:`.Types.GeometryInfo`, dims=[:py:attr:`.Parameters.npoints`, 3], unit = units.m
+        self.dataCollection.add_data(self.position, "position") # Position coordinates
+        self.velocity: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, 3], units.m/units.s, storagedir+"velocity", legacy_converter=[storagedir+"velocity", self._legacy_import_velocity])#: Velocity vectors; dtype= :attr:`.Types.GeometryInfo`, dims=[:py:attr:`.Parameters.npoints`, 3], unit = units.m/units.s
+        self.dataCollection.add_data(self.velocity, "velocity") # Velocity vectors (in m/s)
+        self.n_neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [self.parameters.npoints], units.dimensionless_unscaled, storagedir+"n_neighbors")#: Number of neighbors per point; dtype= :attr:`.Types.IndexInfo`, dims=[:py:attr:`.Parameters.npoints`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.n_neighbors, "n_neighbors") # number of neighbors per point
+        self.neighbors: StorageTensor = StorageTensor(Types.IndexInfo, [None], units.dimensionless_unscaled, storagedir+"neighbors")#: Linearized neighbors vector; dtype= :attr:`.Types.IndexInfo`, dims=[None], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.neighbors, "neighbors") # linearized neighbors vector
 
     def get_cum_n_neighbors(self, device: torch.device) -> torch.Tensor:
         temp: torch.Tensor = torch.cumsum(self.n_neighbors.get(device), dim=0).roll(1)

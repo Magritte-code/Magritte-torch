@@ -6,6 +6,8 @@ from magrittetorch.utils.storagetypes import Types
 from magrittetorch.utils.constants import min_opacity, min_optical_depth, convergence_fraction, min_rel_pop_for_convergence, min_level_pop
 from magrittetorch.model.image import Image, ImageType
 from magrittetorch.tools.radiativetransferutils import relative_error
+from magrittetorch.utils.memorymapping import MemoryManager
+from magrittetorch.utils.logger import Logger, Level
 
 import torch
 import time
@@ -163,9 +165,16 @@ def solve_long_characteristics_ALI_diag(model: Model, device: torch.device) -> t
     raydirs = model.geometry.rays.direction.get(device)
     weights = model.geometry.rays.weight.get(device)
     rr = 0
+
+    memManager = MemoryManager()
+    solve_single_dir = lambda indices: solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions[indices], start_velocities[indices], indices, freqhelper, ALIfreqhelper, device)
+
+
     for raydir_index in range(raydirs.shape[0]):
+    # for raydir_index in range(1):#DEBUG: faster testing
         #Adding the results immediately, as we will otherwise run out of memory
-        ALI_diag_single_dir_fraction, ALI_diag_single_dir_Jdiff = solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions, start_velocities, start_indices, freqhelper, ALIfreqhelper, device)
+        ALI_diag_single_dir_fraction, ALI_diag_single_dir_Jdiff = memManager.run_with_splitting(solve_single_dir, start_indices, device)
+        # ALI_diag_single_dir_fraction, ALI_diag_single_dir_Jdiff = solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions, start_velocities, start_indices, freqhelper, ALIfreqhelper, device)
         ALI_diag_fraction += ALI_diag_single_dir_fraction * weights[raydir_index]
         ALI_diag_Jdiff += ALI_diag_single_dir_Jdiff * weights[raydir_index]
         rr += 1
@@ -404,13 +413,20 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     raydirs = model.geometry.rays.direction.get(device)
     weights = model.geometry.rays.weight.get(device)
     total_intensity = torch.zeros_like(NLTE_freqs) #dims: [parameters.npoints, NFREQS]
-    total_integrated_line_intensity = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo)
-    #add everything, with correct contribution
+    total_integrated_line_intensity = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [parameters.npoints, model.sources.lines.get_total_number_lines()]
     starttime = time.time()
+
+    #Initialize memory manager
+    memManager = MemoryManager()
+    solve_single_dir = lambda indices: solve_long_characteristics_single_direction(model, raydirs[raydir_index], model_positions[indices], model_velocities[indices], indices, freqhelper, device)
+
+    #add everything, with correct contribution
     for raydir_index in range(raydirs.shape[0]):
+    # for raydir_index in range(1):#DEBUG: faster testing
         print("rr:", raydir_index)
         #Adding the results immediately, as we will otherwise run out of memory
-        total_intensity += weights[raydir_index] * solve_long_characteristics_single_direction(model, raydirs[raydir_index,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
+        total_intensity += weights[raydir_index] * memManager.run_with_splitting(solve_single_dir, torch.arange(model.parameters.npoints.get(), device=device), device=device)
+        # total_intensity += weights[raydir_index] * solve_long_characteristics_single_direction(model, raydirs[raydir_index,:], model_positions, model_velocities, torch.arange(model.parameters.npoints.get(), device=device), freqhelper, device)
     print("time for this iteration: ", time.time()-starttime, "s")
 
 
@@ -433,19 +449,19 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
     return total_integrated_line_intensity
 
 
-def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Tensor, device: torch.device, ALI_diag: tuple[torch.Tensor, torch.Tensor] = None) -> list[torch.Tensor]:
+def compute_level_populations_statistical_equilibrium(model: Model, indices: torch.Tensor, J: torch.Tensor, device: torch.device, ALI_diag: tuple[torch.Tensor, torch.Tensor] = None) -> list[torch.Tensor]:
     """Computes the level populations using the statistical equilibrium equations, given the mean line intensities J
-    TODO: also include accelerated lambda iteration, just add (optional) extra functon arguments
 
     Args:
         model (Model): The model
-        J (torch.Tensor): The (effective) mean line intensity. Has dims [parameters.npoints, parameters.nlines?]
+        indices (torch.Tensor): The indices of the points for which to compute the level populations. Has dims [NPOINTS<=parameters.npoints]
+        J (torch.Tensor): The (effective) mean line intensity. Has dims [NPOINTS, parameters.nlines?]
         device (torch.device): Device on which to compute
         ALI_diag (tuple[torch.Tensor, torch.Tensor], optional): The ALI diagonal fraction and the fraction times the source function. Defaults to None.
-        Both have dimensions [parameters.npoints, model.sources.lines.get_total_number_lines]
+        Both have dimensions [NPOINTS, model.sources.lines.get_total_number_lines]
 
     Returns:
-        The list of updated level populations. Has dims [[parameters.npoints, parameters.nlev] for every line species]
+        The list of updated level populations. Has dims [[NPOINTS, parameters.nlev] for every line species]
     """
 
     if (ALI_diag is None):
@@ -462,7 +478,7 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         linedata = lspec.linedata
         nlines: int = linedata.nrad.get()
         nlev: int = linedata.nlev.get()
-        npoints: int = model.parameters.npoints.get()
+        npoints: int = len(indices)
         einsteinA = linedata.A.get(device)
         einsteinBa = linedata.Ba.get(device)
         einsteinBs = linedata.Bs.get(device)
@@ -478,12 +494,14 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         Jrelevant = (Jrelevant - ALI_diag_Jdiff[:, total_encountered_lines:total_encountered_lines+nlines])
 
         rate_upper_to_lower = einsteinA[None, :] * (1 - ALI_diag_fraction[:, total_encountered_lines: total_encountered_lines+nlines]) \
-            + einsteinBs[None, :] * Jrelevant#dims: [npoints, nlines]
+            + einsteinBs[None, :] * Jrelevant#dims: [NPOINTS, nlines]
         rate_lower_to_upper = einsteinBa[None, :] * Jrelevant
-        full_upperidx = upperidx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
-        full_loweridx = loweridx.repeat(npoints, 1)#dims: [npoints, nlines] values: [0, nlev-1]
+        # full_upperidx = upperidx.repeat(npoints, 1)#dims: [NPOINTS, nlines] values: [0, nlev-1]
+        # full_loweridx = loweridx.repeat(npoints, 1)#dims: [NPOINTS, nlines] values: [0, nlev-1]
+        full_upperidx = upperidx.unsqueeze(0).expand(npoints, nlines)#dims: [NPOINTS, nlines] values: [0, nlev-1]
+        full_loweridx = loweridx.unsqueeze(0).expand(npoints, nlines)#dims: [NPOINTS, nlines] values: [0, nlev-1]
 
-        pointidxrange = torch.arange(npoints, dtype=Types.IndexInfo, device=device)#dims: [npoints]
+        pointidxrange = torch.arange(npoints, dtype=Types.IndexInfo, device=device)#dims: [NPOINTS]
 
         # Correctly adds all the contributions to the transition matrix (accumulates rates at same indices)
         matrix.index_put_((pointidxrange[:, None], full_loweridx, full_upperidx), rate_upper_to_lower, accumulate = True)
@@ -492,22 +510,24 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         matrix.index_put_((pointidxrange[:, None], full_loweridx, full_loweridx), -rate_lower_to_upper, accumulate = True)
 
 
-        temperature = model.thermodynamics.temperature.gas.get(device)#dims: [npoints]
-        full_abundance = model.chemistry.species.abundance.get(device)[:, :]#dims: [npoints, nspecs]
+        temperature = model.thermodynamics.temperature.gas.get(device)[indices]#dims: [NPOINTS]
+        full_abundance = model.chemistry.species.abundance.get(device)[indices, :]#dims: [NPOINTS, nspecs]
         #for all collision partners, add their contributions to the transition matrix
         for colpar in lspec.linedata.colpar:
             #Adjusting the abundance, depending on whether we have ortho or para H2
-            colpar_abundance = colpar.adjust_abundace_for_ortho_para_h2(temperature, full_abundance[:, colpar.num_col_partner.get()])#dims: [npoints]
+            colpar_abundance = colpar.adjust_abundace_for_ortho_para_h2(temperature, full_abundance[:, colpar.num_col_partner.get()])#dims: [NPOINTS]
             
             #and do exactly the same as for the normal level transitions
-            #dims tmp:[ntmp], Cd/Ce: [ntmp, ncol], temperature: [npoints] -> interpolated -> dims: [npoints, ncol]
-            rate_upper_to_lower = interpolate2D_linear(colpar.tmp.get(device), colpar.Cd.get(device), temperature) * colpar_abundance[:, None]#dims: [npoints, ncol]
+            #dims tmp:[ntmp], Cd/Ce: [ntmp, ncol], temperature: [NPOINTS] -> interpolated -> dims: [NPOINTS, ncol]
+            rate_upper_to_lower = interpolate2D_linear(colpar.tmp.get(device), colpar.Cd.get(device), temperature) * colpar_abundance[:, None]#dims: [NPOINTS, ncol]
             rate_lower_to_upper = interpolate2D_linear(colpar.tmp.get(device), colpar.Ce.get(device), temperature) * colpar_abundance[:, None]
             upperidx = colpar.icol.get(device)#dims:[ncol]
             loweridx = colpar.jcol.get(device)
-            full_upperidx = upperidx.repeat(npoints, 1)#dims: [npoints, ncol] values: [0, nlev-1]
-            full_loweridx = loweridx.repeat(npoints, 1)#dims: [npoints, ncol] values: [0, nlev-1]
-            pointidxrange = torch.arange(npoints, dtype=Types.IndexInfo, device=device)#dims: [npoints]
+            # full_upperidx = upperidx.repeat(npoints, 1)#dims: [NPOINTS, ncol] values: [0, nlev-1]
+            # full_loweridx = loweridx.repeat(npoints, 1)#dims: [NPOINTS, ncol] values: [0, nlev-1]
+            full_upperidx = upperidx.unsqueeze(0).expand(npoints, -1)#dims: [NPOINTS, ncol] values: [0, nlev-1]
+            full_loweridx = loweridx.unsqueeze(0).expand(npoints, -1)#dims: [NPOINTS, ncol] values: [0, nlev-1]
+            pointidxrange = torch.arange(npoints, dtype=Types.IndexInfo, device=device)#dims: [NPOINTS]
 
             # Correctly adds all the contributions to the transition matrix (accumulates rates at same indices)
             matrix.index_put_((pointidxrange[:, None], full_loweridx, full_upperidx), rate_upper_to_lower, accumulate = True)
@@ -524,7 +544,7 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
         levelpops: torch.Tensor = torch.linalg.solve(matrix, vector)
         # Put negative level populations to zero and renormalize
         levelpops[levelpops < 0.0] = 0.0
-        levelpops = levelpops * lspec.population_tot.get(device)[:, None]/torch.sum(levelpops, dim=1)[:, None]
+        levelpops = levelpops * lspec.population_tot.get(device)[indices, None]/torch.sum(levelpops, dim=1)[:, None]
         computed_level_pops.append(levelpops)
         total_encountered_lines+=nlines
 
@@ -532,11 +552,9 @@ def compute_level_populations_statistical_equilibrium(model: Model, J: torch.Ten
 
 
 def level_pops_converged(previous_level_pops: torch.Tensor, current_level_pops: torch.Tensor, relative_diff_threshold: float = min_rel_pop_for_convergence, convergence_fraction: float = convergence_fraction) -> bool:
-    print("mean relative error:", torch.mean(relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop)).item())
-    # print("relative diff threshold:", relative_diff_threshold)
-    # print("convergence fraction:", convergence_fraction)
-    print("fraction converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)))
-    print("converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
+    Logger().log(f"Mean relative error: {torch.mean(relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop)).item()}", Level.INFO)
+    print("Fraction converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item())
+    print("Model converged:", torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
     return (torch.mean((relative_error(previous_level_pops+min_level_pop, current_level_pops+min_level_pop) < relative_diff_threshold).type(Types.LevelPopsInfo)).item() > convergence_fraction)
 
 
@@ -572,22 +590,30 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
             last_ng_accelerated_pops.append(torch.zeros((model.parameters.npoints.get(), model.sources.lines.lineProducingSpecies[linespecidx].linedata.nlev.get()), dtype=Types.LevelPopsInfo, device=device))
         # n_its_in_ng_accel: int = 1
             
+            
         for i in range(max_n_iterations):
             print("it:", i)
 
             all_species_converged = True
-            relative_diff_default_its = 0.0
+            relative_diff_default_its = 0.0            
 
             mean_line_intensities = solve_long_characteristics_NLTE(model, device)
             print("total time elapsed:", time.time()-starttime, "s")
+            memManager = MemoryManager()
 
             if use_ALI:
                 ALI_diag = solve_long_characteristics_ALI_diag(model, device)
-                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
+                solve_stat_eq = lambda indices: compute_level_populations_statistical_equilibrium(model, indices, mean_line_intensities[indices, :], device, (ALI_diag[0][indices, :], ALI_diag[1][indices, :]))
+                computed_level_pops: list[torch.Tensor] = memManager.run_with_splitting(solve_stat_eq, torch.arange(model.parameters.npoints.get(), device=device), device=device)
+                # computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
             else:
-                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
+                solve_stat_eq = lambda indices: compute_level_populations_statistical_equilibrium(model, indices, mean_line_intensities[indices, :], device)
+                computed_level_pops: list[torch.Tensor] = memManager.run_with_splitting(solve_stat_eq, torch.arange(model.parameters.npoints.get(), device=device), device=device)
+                # computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
             for lspecidx in range(model.parameters.nlspecs.get()):
                 lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                computed_level_pops[lspecidx] = lspec.correct_population(computed_level_pops[lspecidx], device)
+
                 if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
                     all_species_converged = False
                 relative_diff_default_its += torch.mean(relative_error(computed_level_pops[lspecidx], lspec.population.get(device))).item()
@@ -602,7 +628,7 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
 
             relative_diff_ng_accel = 0.0
             #only start using the acceleration procedure after accumulating 3 iterations
-            if len(previous_level_pops[0]) > 3:#TODO: replace with len(previous_level_pops[0])
+            if len(previous_level_pops[0]) > 3:
 
                 for lspecidx in range(model.parameters.nlspecs.get()):
                     lspec = model.sources.lines.lineProducingSpecies[lspecidx]
@@ -617,8 +643,12 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
                     all_species_converged = True
                     for lspecidx in range(model.parameters.nlspecs.get()):
                         lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                        #masers might occur, and we have no way to deal with them, so we correct the populations
+                        computed_level_pops[lspecidx] = lspec.correct_population(computed_level_pops[lspecidx], device)
+
                         if not level_pops_converged(lspec.population.get(device), last_ng_accelerated_pops[lspecidx]):
                             all_species_converged = False
+                        
                         lspec.population.set(last_ng_accelerated_pops[lspec.linedata.num.get()].to("cpu"))
 
                     previous_level_pops = [last_ng_accelerated_pops[lspecidx].unsqueeze(0) for lspecidx in range(model.parameters.nlspecs.get())]
@@ -638,15 +668,23 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
             if use_ALI:
                 print("using ALI")
                 ALI_diag = solve_long_characteristics_ALI_diag(model, device)
-                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
+                solve_stat_eq = lambda indices: compute_level_populations_statistical_equilibrium(model, indices, mean_line_intensities[indices, :], device, (ALI_diag[0][indices, :], ALI_diag[1][indices, :]))
+                computed_level_pops: list[torch.Tensor] = memManager.run_with_splitting(solve_stat_eq, torch.arange(model.parameters.npoints.get(), device=device), device=device)
+                # computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device, ALI_diag)
             else:
-                computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
+                solve_stat_eq = lambda indices: compute_level_populations_statistical_equilibrium(model, indices, mean_line_intensities[indices, :], device)
+                computed_level_pops: list[torch.Tensor] = memManager.run_with_splitting(solve_stat_eq, torch.arange(model.parameters.npoints.get(), device=device), device=device)
+                # computed_level_pops: list[torch.Tensor] = compute_level_populations_statistical_equilibrium(model, mean_line_intensities, device)
             for lspecidx in range(model.parameters.nlspecs.get()):
                 lspec = model.sources.lines.lineProducingSpecies[lspecidx]
+                #masers might occur, and we have no way to deal with them, so we correct the populations
+                computed_level_pops[lspecidx] = lspec.correct_population(computed_level_pops[lspecidx], device)
+
                 if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
                     all_species_converged = False
 
                 lspec.population.set(computed_level_pops[lspecidx].to("cpu"))
+
             model.dataCollection.infer_data()
             if all_species_converged:
                 break
@@ -659,22 +697,22 @@ def image_model(model: Model, ray_direction: torch.Tensor, freqs: torch.Tensor, 
     Appends the resulting image to model.images
 
     Args:
-    - model (Model): The model to use for computing the image.
-    - ray_direction (torch.Tensor): The direction of the ray. Has dimensions [3].
-    - freqs (torch.Tensor): The frequency range to use for computing the image. Has dimensions [NFREQS].
-    - device (torch.device): The device on which to compute.
-    - Nxpix (int, optional): The number of pixels in the x direction. Defaults to 256.
-    - Nypix (int, optional): The number of pixels in the y direction. Defaults to 256.
-    - imageType (ImageType, optional): The type of image to compute. Defaults to ImageType.Intensity. TODO: not implemented for other types
+        model (Model): The model to use for computing the image.
+        ray_direction (torch.Tensor): The direction of the ray. Has dimensions [3].
+        freqs (torch.Tensor): The frequency range to use for computing the image. Has dimensions [NFREQS].
+        device (torch.device): The device on which to compute.
+        Nxpix (int, optional): The number of pixels in the x direction. Defaults to 256.
+        Nypix (int, optional): The number of pixels in the y direction. Defaults to 256.
+        imageType (ImageType, optional): The type of image to compute. Defaults to ImageType.Intensity.
 
     Returns:
-    - None
+        None
     """
     image_index: int = len(model.images)
     image = Image(model.parameters, model.dataCollection, imageType, ray_direction, freqs, image_index)
     image.setup_image(model.geometry, Nxpix, Nypix, imageType)
     image.imageType.set(imageType)
-    freqhelper = FrequencyEvalHelper(freqs.unsqueeze(0).repeat(model.parameters.npoints.get(), 1), model.sources.lines.lineProducingSpecies.list, model.geometry.points.velocity.get(device), device)#type: ignore
+    freqhelper = FrequencyEvalHelper(freqs.unsqueeze(0).expand(model.parameters.npoints.get(), -1), model.sources.lines.lineProducingSpecies.list, model.geometry.points.velocity.get(device), device)#type: ignore
 
     if model.geometry.geometryType.get() == GeometryType.General3D:
         start_positions, start_indices = image.transform_pixel_coordinates_to_3D_starting_coordinates(model.geometry, device)

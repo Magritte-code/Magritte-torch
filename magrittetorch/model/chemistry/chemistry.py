@@ -13,4 +13,4 @@ class Chemistry:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.species: Species = Species(self.parameters, self.dataCollection)
+        self.species: Species = Species(self.parameters, self.dataCollection)#: Species data

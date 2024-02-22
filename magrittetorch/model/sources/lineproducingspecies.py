@@ -2,18 +2,16 @@ from typing import List, Union, Optional, Any, Tuple
 from magrittetorch.utils.storagetypes import StorageTensor, Types, DataCollection, InferredTensor, DelayedListOfClassInstances, InferredTensorPerNLTEIter
 from magrittetorch.algorithms.torch_algorithms import interpolate2D_linear
 from magrittetorch.model.parameters import Parameters
+from magrittetorch.utils.logger import Logger, Level
 from magrittetorch.model.sources.linequadrature import LineQuadrature
 from magrittetorch.algorithms.torch_algorithms import multi_arange
+from magrittetorch.utils.constants import min_level_pop, population_inversion_fraction
 import torch
 from astropy import units
 import astropy.constants
 from magrittetorch.model.sources.linedata import Linedata
 import numpy as np
 
-#TODO: implement in seperate file
-#plan to implement
-class ApproxLambda:
-    pass
 
 class LineProducingSpecies:
 
@@ -21,18 +19,22 @@ class LineProducingSpecies:
         storagedir : str = "lines/lineProducingSpecies_"+str(lineproducingspeciesindex)+"/"#TODO: is legacy io for now; figure out how to switch to new structure
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.linedata : Linedata = Linedata(self.parameters, self.dataCollection, lineproducingspeciesindex)
-        self.linequadrature : LineQuadrature = LineQuadrature(params, dataCollection, lineproducingspeciesindex)
-        self.approxlambda : ApproxLambda = ApproxLambda()
-        self.population_tot : InferredTensor = InferredTensor(Types.LevelPopsInfo, [self.parameters.npoints], units.m**-3, self._infer_population_tot, storagedir+"population_tot"); dataCollection.add_inferred_dataset(self.population_tot, "population_tot_"+str(lineproducingspeciesindex))
-        self.population : InferredTensor = InferredTensor(Types.LevelPopsInfo, [self.parameters.npoints, self.linedata.nlev], units.m**-3, self._infer_population, relative_storage_location = storagedir+"population"); dataCollection.add_inferred_dataset(self.population, "population_"+str(lineproducingspeciesindex))
-        # self.prev_populations : InferredTensor TODO: err, list/tensor with more dims should suffice
-        self.sorted_linewidths: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.Hz, self._infer_sorted_linewidths); self.dataCollection.add_inferred_dataset(self.sorted_linewidths, "sorted linewidths_"+str(lineproducingspeciesindex))
-        self.sorted_linefreqs: InferredTensor = InferredTensor(Types.FrequencyInfo, [self.linedata.nrad], units.Hz, self._infer_sorted_linefreqs); self.dataCollection.add_inferred_dataset(self.sorted_linefreqs, "sorted linefreqs_"+str(lineproducingspeciesindex))
-        self.relative_line_width: InferredTensor = InferredTensor(Types.FrequencyInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_relative_line_width); self.dataCollection.add_inferred_dataset(self.relative_line_width, "relative line width_"+str(lineproducingspeciesindex))
-        # TODO: fix units for line opacities and emissivities
-        self.line_opacities: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.radian**-2, self._infer_line_opacities); self.dataCollection.add_inferred_dataset(self.line_opacities, "line opacities_"+str(lineproducingspeciesindex))
-        self.line_emissivities: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.radian**-2, self._infer_line_emissivities); self.dataCollection.add_inferred_dataset(self.line_emissivities, "line emissivities_"+str(lineproducingspeciesindex))
+        self.linedata : Linedata = Linedata(self.parameters, self.dataCollection, lineproducingspeciesindex)#: Line data for this species
+        self.linequadrature : LineQuadrature = LineQuadrature(params, dataCollection, lineproducingspeciesindex)#: Line quadrature for this species
+        self.population_tot : InferredTensor = InferredTensor(Types.LevelPopsInfo, [self.parameters.npoints], units.m**-3, self._infer_population_tot, storagedir+"population_tot")#: Number density of this species; dtype = :attr:`.Types.LevelPopsInfo`, dims = [:py:attr:`.Parameters.npoints`], units = units.m**-3
+        dataCollection.add_inferred_dataset(self.population_tot, "population_tot_"+str(lineproducingspeciesindex))
+        self.population : InferredTensor = InferredTensor(Types.LevelPopsInfo, [self.parameters.npoints, self.linedata.nlev], units.m**-3, self._infer_population, relative_storage_location = storagedir+"population")#: Level populations of this species; dtype = :attr:`.Types.LevelPopsInfo`, dims = [:py:attr:`.Parameters.npoints`, :py:attr:`.Linedata.nlev`], units = units.m**-3
+        dataCollection.add_inferred_dataset(self.population, "population_"+str(lineproducingspeciesindex))
+        self.sorted_linewidths: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.Hz, self._infer_sorted_linewidths)#: Widths of the lines, sorted in according to the line frequencies; dtype = :attr:`.Types.FrequencyInfo`, dims = [:py:attr:`.Parameters.npoints`, :py:attr:`.Linedata.nrad`], units = units.Hz
+        self.dataCollection.add_inferred_dataset(self.sorted_linewidths, "sorted linewidths_"+str(lineproducingspeciesindex))
+        self.sorted_linefreqs: InferredTensor = InferredTensor(Types.FrequencyInfo, [self.linedata.nrad], units.Hz, self._infer_sorted_linefreqs)#: Frequencies of the lines, sorted in ascending order; dtype = :attr:`.Types.FrequencyInfo`, dims = [:py:attr:`.Linedata.nrad`], units = units.Hz
+        self.dataCollection.add_inferred_dataset(self.sorted_linefreqs, "sorted linefreqs_"+str(lineproducingspeciesindex))
+        self.relative_line_width: InferredTensor = InferredTensor(Types.FrequencyInfo, [self.parameters.npoints], units.dimensionless_unscaled, self._infer_relative_line_width)#: Relative line width per point; dtype = :attr:`.Types.FrequencyInfo`, dims = [:py:attr:`.Parameters.npoints`], units = units.dimensionless_unscaled
+        self.dataCollection.add_inferred_dataset(self.relative_line_width, "relative line width_"+str(lineproducingspeciesindex))
+        self.line_opacities: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.Hz*units.m**-1, self._infer_line_opacities)#: Line opacities for this species, for all positions and all line transitions; dtype = :attr:`.Types.FrequencyInfo`, dims = [:py:attr:`.Parameters.npoints`, :py:attr:`.Linedata.nrad`], units = units.Hz*units.m**-1
+        self.dataCollection.add_inferred_dataset(self.line_opacities, "line opacities_"+str(lineproducingspeciesindex))
+        self.line_emissivities: InferredTensorPerNLTEIter = InferredTensorPerNLTEIter(Types.FrequencyInfo, [self.parameters.npoints, self.linedata.nrad], units.W*units.m**-3*units.sr**-1, self._infer_line_emissivities)# Line emissivities for this species, for all positions and all line transitions; dtype = :attr:`.Types.FrequencyInfo`, dims = [:py:attr:`.Parameters.npoints`, :py:attr:`.Linedata.nrad`], units = units.W*units.m**-3*units.sr**-1
+        self.dataCollection.add_inferred_dataset(self.line_emissivities, "line emissivities_"+str(lineproducingspeciesindex))
 
     def _infer_sorted_linewidths(self) -> torch.Tensor:
         sorted_data: torch.Tensor
@@ -48,7 +50,7 @@ class LineProducingSpecies:
         return self.get_relative_line_width()
 
     def _infer_population(self) -> torch.Tensor:
-        non_normalized_pops = torch.reshape(self.linedata.weight.get(), (1,-1)) * torch.exp(-torch.reshape(self.linedata.energy.get(), (1,-1)) / (astropy.constants.k_B.value * torch.reshape(self.dataCollection.get_data("gas temperature").get(), (-1,1))))#type: ignore
+        non_normalized_pops = min_level_pop + torch.reshape(self.linedata.weight.get(), (1,-1)) * torch.exp(-torch.reshape(self.linedata.energy.get(), (1,-1)) / (astropy.constants.k_B.value * torch.reshape(self.dataCollection.get_data("gas temperature").get(), (-1,1))))#type: ignore
         return torch.reshape(self.population_tot.get(), (-1,1)) * non_normalized_pops / torch.sum(non_normalized_pops, dim = 1).reshape(-1,1)
 
 
@@ -68,6 +70,60 @@ class LineProducingSpecies:
         device_einstein_A = self.linedata.A.get()
         device_irad = self.linedata.irad.get()
         return  astropy.constants.h.value / (4.0 * np.pi) * device_pops[:, device_irad] * device_einstein_A.reshape(1,-1)#type: ignore
+    
+    def correct_population(self, new_population: torch.Tensor, device: torch.device) -> torch.Tensor:
+        """First checks at which lines population inversions occur, and adjusts the population accordingly, setting the offending level populations to LTE.
+
+        Args:
+            new_population (torch.Tensor): New population to set. Has dimensions [parameters.npoints, linedata.nlev]
+            device (torch.device): Device on which to compute the correction
+        
+        Returns:
+            torch.Tensor: The corrected population
+        """
+        device_pops = new_population
+        device_einstein_Ba = self.linedata.Ba.get(device)
+        device_einstein_Bs = self.linedata.Bs.get(device)
+        device_irad = self.linedata.irad.get(device)
+        device_jrad = self.linedata.jrad.get(device)
+        npoints = self.parameters.npoints.get()
+        nlev = self.linedata.nlev.get()
+        gas_temperature = self.dataCollection.get_data("gas temperature").get(device).unsqueeze(1).expand(-1, nlev)#type: ignore #dims: [parameters.npoints, linedata.nlev]
+        lev_weight = self.linedata.weight.get(device).expand(npoints, -1)#type: ignore
+        lev_energy = self.linedata.energy.get(device).expand(npoints, -1)#type: ignore
+        masering_levels = torch.zeros((npoints, nlev), dtype=Types.Bool, device=device)
+        prev_n_masering_lines = 0
+        #TODO: it might possible to optimize this further, by only considering the points at which masers occur
+        while True:
+            #determine the masering lines by computing the line opacity prefactors, which are not necessary for the comparison
+            #Note: near to masering lines will also be set to LTE
+            masering_lines = (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - population_inversion_fraction * device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)) <= 0.0#dims: [parameters.npoints, linedata.nrad]
+            #current iter masering lines
+            #Amount of masering levels will only increase
+            #TODO: check whether the simultaneous assignment contains errors
+            masering_levels = masering_levels.scatter_add(1, device_irad.unsqueeze(0).expand(npoints, -1), masering_lines)
+            masering_levels = masering_levels.scatter_add(1, device_jrad.unsqueeze(0).expand(npoints, -1), masering_lines)
+            # masering_levels[:, device_irad] = torch.logical_or(masering_levels[:, device_irad], masering_lines)
+            # masering_levels[:, device_jrad] = torch.logical_or(masering_levels[:, device_jrad], masering_lines)
+            curr_n_masering_levels = torch.sum(masering_levels)
+
+            sum_masering_pop_before_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
+            #for every point, set the masering lines simultaneously to LTE
+            new_population[masering_levels] = lev_weight[masering_levels] * torch.exp(-lev_energy[masering_levels] / (astropy.constants.k_B.value * gas_temperature[masering_levels])) + min_level_pop#type: ignore
+
+            sum_masering_pop_after_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
+            #and renormalize them
+            new_population[masering_levels] *= (((sum_masering_pop_before_adjust / sum_masering_pop_after_adjust)).unsqueeze(1).repeat(1, nlev))[masering_levels]
+
+            if curr_n_masering_levels == prev_n_masering_lines:
+                break
+            prev_n_masering_lines = curr_n_masering_levels
+
+        if prev_n_masering_lines>0:
+            Logger().log("Negative line opacities encountered. Corresponding levels have been set to LTE.", Level.WARNING)
+        
+        return new_population
+
         
     def get_line_opacities_emissivities(self, device : torch.device=torch.device("cpu")) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the line opacities and emissivities for this species
@@ -301,6 +357,7 @@ class LineProducingSpecies:
     def compute_line_cooling(self, current_level_pops: torch.Tensor, device: torch.device) -> torch.Tensor:
         """
         Computes the line cooling rate for each point, based on the given level populations
+            TODO: test whether memory error might occur for NLTE models with many levels; if so, consider adding memory management
 
         Args:
             current_level_pops (torch.Tensor): The current level populations. Has dimensions [parameters.npoints, linedata.nlev].

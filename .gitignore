@@ -10,3 +10,4 @@ tests/models/*
 tests/results/*
 *.hdf5
 docs/src/doxygen/*
+*.npy

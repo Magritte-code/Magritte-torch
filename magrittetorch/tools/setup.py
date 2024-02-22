@@ -28,7 +28,7 @@ def check_if_1D(model: Model) -> bool:
         model (Model): The model to check
 
     Returns:
-        bool: _description_
+        bool: Truth value
     """
     pos = model.geometry.points.position.get()
     minpos = torch.min(pos, dim=0)
@@ -63,8 +63,8 @@ def set_Delaunay_neighbor_lists (model: Model) -> Model:
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     nbs: list[int]
     n_nbs: list[int]
@@ -180,15 +180,15 @@ def set_uniform_rays(model: Model, nrays: int, randomize: bool =False, first_ray
     Setter for rays to uniformly distributed directions.
 
     Args:
-        model (Model): Magritte model object to set.
+        model (Model): Magrittetorch model object to set.
         nrays (int): Number of rays to use
         randomized (bool): Whether or not to randomize the directions of the rays.
         first_ray (np.ndarray): Direction vector of the first ray in the ray list. Has dimensions [3]
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     #get number dims:
     pos = model.geometry.points.position.get()
@@ -227,8 +227,8 @@ def set_rays_spherical_symmetry(model: Model, nrays: int, uniform: bool = True, 
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
     nrays: int
         Number of rays to use
     uniform : bool
@@ -240,8 +240,8 @@ def set_rays_spherical_symmetry(model: Model, nrays: int, uniform: bool = True, 
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     rs: list[int]|np.ndarray
     if uniform:
@@ -319,7 +319,7 @@ def set_rays_spherical_symmetry(model: Model, nrays: int, uniform: bool = True, 
     # Normalize the weights
     weight /= np.sum(weight)
 
-    # Set the direction and the weights in the Magritte model
+    # Set the direction and the weights in the Magrittetorch model
     model.geometry.rays.direction.set(torch.from_numpy(direction))
     model.geometry.rays.weight   .set(torch.from_numpy(weight))
     
@@ -345,13 +345,13 @@ def set_Delaunay_boundary (model: Model) -> Model:
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     pos = model.geometry.points.position.get()
     ndims: torch.Tensor = torch.count_nonzero(torch.max(pos, dim=0).values-torch.min(pos, dim=0).values)
@@ -372,13 +372,13 @@ def set_boundary_condition_zero (model: Model) -> Model:
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     model.geometry.boundary.boundary_condition.set(torch.full([model.parameters.nboundary.get()], BoundaryCondition.Zero.value, dtype=Types.Enum))
 
@@ -391,13 +391,13 @@ def set_boundary_condition_CMB (model: Model) -> Model:
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     model.geometry.boundary.boundary_condition.set(torch.full([model.parameters.nboundary.get()], BoundaryCondition.CMB.value, dtype=Types.Enum))
     model.geometry.boundary.boundary_temperature.set_astropy(astropy_const.Tcmb * [1.0 for _ in range(model.parameters.nboundary.get())])
@@ -411,8 +411,8 @@ def set_boundary_condition_1D (model: Model, T_in : astropy.units.Quantity = ast
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
     T_in : float
         Boundary temperature at the inner boundary.
     T_out : float
@@ -420,8 +420,8 @@ def set_boundary_condition_1D (model: Model, T_in : astropy.units.Quantity = ast
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     if not (model.geometry.geometryType.get() == GeometryType.SpericallySymmetric1D):
         raise ValueError ('These boundary conditions only work for a 1D model.')
@@ -441,11 +441,11 @@ def set_quadrature(model: Model, nquads: int) -> Model:
     quadrature, used for integrating over (Gaussian) line profiles.
 
     Args:
-        model (Model): Magritte model object
+        model (Model): Magrittetorch model object
         nquads (int): Number of frequency quadrature points per line
 
     Returns:
-        Model: Updated Magritte object
+        Model: Updated Magrittetorch object
     """
 
     for l in range(model.parameters.nlspecs.get()):
@@ -476,7 +476,7 @@ def getSpeciesNumber (species: Species, name: str) -> int:
 
     Parameters
     ----------
-    species : Magritte species object
+    species : Magrittetorch species object
         Contains the information about the chemical species in the model
     name : str
         name of the chemical species
@@ -497,7 +497,7 @@ def getSpeciesNumberList (species: Species, name: list[str]) -> list[int]:
 
     Parameters
     ----------
-    species (Species): Magritte species object, contains the information about the chemical species in the model
+    species (Species): Magrittetorch species object, contains the information about the chemical species in the model
     name (list[str]): names of the chemical species
 
     Raises
@@ -601,8 +601,8 @@ def set_linedata_from_LAMDA_file (model: Model, fileNames: Union[list[str],str],
 
     Parameters
     ----------
-    model : Magritte model object
-        Magritte model object to set.
+    model : Magrittetorch model object
+        Magrittetorch model object to set.
     fileNames : list of strings
         List of file names for the LAMDA line data files.
     config : dict
@@ -610,12 +610,8 @@ def set_linedata_from_LAMDA_file (model: Model, fileNames: Union[list[str],str],
 
     Returns
     -------
-    out : Magritte model object
-        Updated Magritte object.
-
-    Note
-    ----
-    Do not use the Magritte objects linedata etc. this will kill performance. Hence, the copies.
+    out : Magrittetorch model object
+        Updated Magrittetorch object.
     """
     # Make sure fileNames is a list
     fileNameList: list[str]

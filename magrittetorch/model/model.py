@@ -12,32 +12,22 @@ from magrittetorch.model.image import Image, ImageType
 import torch
 
 
-
-
-class NgAccelerationType(Enum):
-    """
-    Type of ng-acceleration to use
-    """
-    Default = 0
-    Adaptive = 1
-
-# Dummy classes; should be refactored into seperate files
-class Radiation:
-    # Define the Radiation class here
-    pass
-
 class Model:
     def __init__(self, save_location: str) -> None:
-        self.parameters: Parameters = Parameters()
-        self.dataCollection = DataCollection(self.parameters)
+        """Initializes the model, and specifies the location to save/read the model to/from.
+
+        Args:
+            save_location (str): Location of the hdf5 file to save/read the model to/from 
+        """
+        self.parameters: Parameters = Parameters()#: Model parameters
+        self.dataCollection: DataCollection = DataCollection(self.parameters)#: DataCollection
         # self.name : str = name
-        self.io = IO(save_location)
-        self.geometry: Geometry = Geometry(self.parameters, self.dataCollection)
-        self.chemistry: Chemistry = Chemistry(self.parameters, self.dataCollection)
-        self.thermodynamics: Thermodynamics = Thermodynamics(self.parameters, self.dataCollection)
-        self.sources : Sources = Sources(self.parameters, self.dataCollection)
-        self.radiation: Union[Radiation, None] = None
-        self.images: List[Image] = []
+        self.io: IO = IO(save_location)#: IO module
+        self.geometry: Geometry = Geometry(self.parameters, self.dataCollection)#: Geometry module
+        self.chemistry: Chemistry = Chemistry(self.parameters, self.dataCollection)#: Chemistry module
+        self.thermodynamics: Thermodynamics = Thermodynamics(self.parameters, self.dataCollection)#: Thermodynamics module
+        self.sources : Sources = Sources(self.parameters, self.dataCollection)#: Sources module
+        self.images: list[Image] = []#: List of images
 
     def write(self) -> None:
         """Writes the model to the save location

@@ -12,7 +12,7 @@ storagedir : str = "sources/"
 class Continuum:
     pass
 
-#plan to implement
+#TODO: decide whether to implement
 class Scattering:
     pass
 
@@ -20,7 +20,7 @@ class Sources:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.lines = Lines(self.parameters, dataCollection)
+        self.lines: Lines = Lines(self.parameters, dataCollection)#: Line data
         self.continuum : Continuum = Continuum()
 
     #Deprecated: use get_total_opacity_emissivity_freqhelper instead
@@ -74,7 +74,7 @@ class Sources:
         Returns:
             torch.Tensor: _description_
         """
-        #TODO: when adding continumm or scattering, add them here
+        #TODO: when adding continuum or scattering, add them here
         return self.lines.get_sum_line_optical_depths(point_indices, frequencies, prev_frequencies, distances, curr_shift, prev_shift, curr_opacity, prev_opacity, device)
     
     def get_total_optical_depth_freqhelper(self, point_indices: torch.Tensor, prev_point_indices: torch.Tensor, original_point_indices: torch.Tensor, freqhelper: FrequencyEvalHelper, distances: torch.Tensor, curr_shift: torch.Tensor, prev_shift: torch.Tensor, curr_opacity: torch.Tensor, prev_opacity: torch.Tensor, device: torch.device = torch.device("cpu")) -> torch.Tensor:
@@ -85,7 +85,7 @@ class Sources:
         Args:
             curr_point_indices (torch.Tensor): Indices of the current points in the model. Has dimensions [NPOINTS]
             prev_point_indices (torch.Tensor): Indices of the previous points in the model. Has dimensions [NPOINTS]
-            original_point_indices (torch.Tensor): Indicies of the starting points in the model. Has dimensions [NPOINTS]
+            original_point_indices (torch.Tensor): Point indices for the freqEvalHelper at which to evaluate the comoving frame frequency. Has dimensions [NPOINTS]
             freqhelper (FrequencyEvalHelper): FrequencyEvalHelper object
             curr_shift (torch.Tensor): Doppler shift at the current point. Has dimensions [NPOINTS]
             prev_shift (torch.Tensor): Doppler shift at the next point. Has dimensions [NPOINTS]
@@ -97,7 +97,7 @@ class Sources:
         Returns:
             torch.Tensor: Total optical depth for the segment. Has dimensions [NPOINTS, NFREQS]
         """
-        #TODO: when adding continumm or scattering, add them here
+        #TODO: when adding continuum or scattering, add them here
 
         return self.lines.get_sum_total_optical_depth_using_freqhelper(point_indices, prev_point_indices, original_point_indices, freqhelper, curr_shift, prev_shift, curr_opacity, prev_opacity, distances, device)
         

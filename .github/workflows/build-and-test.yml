@@ -103,6 +103,6 @@ jobs:
         run: pytest --verbose
         working-directory: tests/benchmarks/analytic
       # Numeric tests still TODO
-      # - name: run numeric tests
-      #   run: pytest --verbose
-      #   working-directory: tests/benchmarks/numeric
+      - name: run numeric tests
+        run: pytest --verbose
+        working-directory: tests/benchmarks/numeric

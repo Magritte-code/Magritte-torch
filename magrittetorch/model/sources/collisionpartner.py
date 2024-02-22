@@ -10,15 +10,24 @@ class CollisionPartner:
         storagedir : str = "lines/lineProducingSpecies_"+str(lineproducingspeciesidx)+"/linedata/collisionPartner_"+str(colparidx)+"/"#TODO: is legacy io for now; figure out how to switch to new structure
         self.parameters: Parameters = params
         self.dataCollection: DataCollection = dataCollection
-        self.ntmp: Parameter[int] = Parameter[int](storagedir+"ntmp", legacy_converter=(storagedir+"tmp", LegacyHelper.read_length_of_dataset)); self.dataCollection.add_local_parameter(self.ntmp)
-        self.ncol: Parameter[int] = Parameter[int](storagedir+"ncol", legacy_converter=(storagedir+"icol", LegacyHelper.read_length_of_dataset)); self.dataCollection.add_local_parameter(self.ncol)
-        self.icol: StorageTensor = StorageTensor(Types.IndexInfo, [self.ncol], units.dimensionless_unscaled, storagedir+"icol"); self.dataCollection.add_data(self.icol, "collisional upper level_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
-        self.jcol: StorageTensor = StorageTensor(Types.IndexInfo, [self.ncol], units.dimensionless_unscaled, storagedir+"jcol"); self.dataCollection.add_data(self.jcol, "collisional lower level_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
-        self.tmp: StorageTensor = StorageTensor(Types.GeometryInfo, [self.ntmp], units.K, storagedir+"tmp"); self.dataCollection.add_data(self.tmp, "collision temperature_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
-        self.Ce: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Ce"); self.dataCollection.add_data(self.Ce, "Collisional excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
-        self.Cd: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Cd"); self.dataCollection.add_data(self.Cd, "Collisional de-excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
-        self.num_col_partner: Parameter[int] = Parameter[int](storagedir+"num_col_partner"); self.dataCollection.add_local_parameter(self.num_col_partner)
-        self.orth_or_para_H2: Parameter[str] = Parameter[str](storagedir+"orth_or_para_H2"); self.dataCollection.add_local_parameter(self.orth_or_para_H2)
+        self.ntmp: Parameter[int] = Parameter[int](storagedir+"ntmp", legacy_converter=(storagedir+"tmp", LegacyHelper.read_length_of_dataset))#: Number of temperature available for interpolation of collisional rates
+        self.dataCollection.add_local_parameter(self.ntmp)
+        self.ncol: Parameter[int] = Parameter[int](storagedir+"ncol", legacy_converter=(storagedir+"icol", LegacyHelper.read_length_of_dataset))#: Number of collisional transitions between levels
+        self.dataCollection.add_local_parameter(self.ncol)
+        self.icol: StorageTensor = StorageTensor(Types.IndexInfo, [self.ncol], units.dimensionless_unscaled, storagedir+"icol")#: Index of the upper level of the collisional transition; dtype= :attr:`.Types.IndexInfo`, dims=[:py:attr:`.CollisionPartner.ncol`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.icol, "collisional upper level_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.jcol: StorageTensor = StorageTensor(Types.IndexInfo, [self.ncol], units.dimensionless_unscaled, storagedir+"jcol")#: Index of the lower level of the collisional transition; dtype= :attr:`.Types.IndexInfo`, dims=[:py:attr:`.CollisionPartner.ncol`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.jcol, "collisional lower level_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.tmp: StorageTensor = StorageTensor(Types.GeometryInfo, [self.ntmp], units.K, storagedir+"tmp")#: Temperatures of the tabulated collisional rates; dtype= :attr:`.Types.GeometryInfo`, dims=[:py:attr:`.CollisionPartner.ntmp`], unit = units.K
+        self.dataCollection.add_data(self.tmp, "collision temperature_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.Ce: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Ce")#: Collisional excitation rates; dtype= :attr:`.Types.LevelPopsInfo`, dims=[:py:attr:`.CollisionPartner.ntmp`, :py:attr:`.CollisionPartner.ncol`], unit = units.s**-1
+        self.dataCollection.add_data(self.Ce, "Collisional excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.Cd: StorageTensor = StorageTensor(Types.LevelPopsInfo, [self.ntmp, self.ncol], units.s**-1, storagedir+"Cd")#: Collisional de-excitation rates; dtype= :attr:`.Types.LevelPopsInfo`, dims=[:py:attr:`.CollisionPartner.ntmp`, :py:attr:`.CollisionPartner.ncol`], unit = units.s**-1
+        self.dataCollection.add_data(self.Cd, "Collisional de-excitation rates_"+str(lineproducingspeciesidx)+"_"+str(colparidx))
+        self.num_col_partner: Parameter[int] = Parameter[int](storagedir+"num_col_partner")#: Index of collision partner
+        self.dataCollection.add_local_parameter(self.num_col_partner)
+        self.orth_or_para_H2: Parameter[str] = Parameter[str](storagedir+"orth_or_para_H2")#: Only for H2, specifies whether the collisional rates are for ortho "o" or para "p" H2, or "n" for other species
+        self.dataCollection.add_local_parameter(self.orth_or_para_H2)
 
 
     #TODO: implement this in preprocessing, maybe just infer some more complete set of species data
@@ -30,7 +39,7 @@ class CollisionPartner:
             abundance (torch.Tensor): The abundance of H2 (or any other species)
 
         Returns:
-            torch.Tensor: The abundance of H2 adjusted for ortho-para H2
+            torch.Tensor: The abundance of H2 adjusted for ortho-para H2.
             The abundance is unchanged for other species
         """
         if self.orth_or_para_H2.get() != "n":

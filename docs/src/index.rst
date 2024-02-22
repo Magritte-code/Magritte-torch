@@ -1,5 +1,5 @@
 Magrittetorch documentation
-######################
+###########################
 
 Welcome to the Magrittetorch documentation! Magrittetorch is a PyTorch port of `Magritte <https://github.com/Magritte-code/Magritte>`_, an open-source software
 library for simulating radiation transport. Magrittetorch has been developed at `KU Leuven
@@ -9,10 +9,8 @@ Magrittetorch is currently mainly used for post-processing hydrodynamical simula
 creating synthetic observations, but allows for uncertainty quantification by utilizing the automatic differentiation capabilities of PyTorch.
 Magrittetorch uses a deterministic ray-tracer with a formal solver that currently focusses on
 line radiative transfer (see
-`De Ceuster et al. 2019 <https://ui.adsabs.harvard.edu/abs/2020MNRAS.492.1812D/abstract>`_, `De Ceuster et al. 2020 <https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5194D/abstract>`_ and Ceulemans et al. (in prep.)_ 
+`De Ceuster et al. 2019 <https://ui.adsabs.harvard.edu/abs/2020MNRAS.492.1812D/abstract>`_, `De Ceuster et al. 2020 <https://ui.adsabs.harvard.edu/abs/2020MNRAS.499.5194D/abstract>`_ and Ceulemans et al. (in prep.). 
 for more details). 
-
-TODO: add example usage of Magrittetorch below
 
 .. toctree::
    :maxdepth: 1
@@ -20,9 +18,8 @@ TODO: add example usage of Magrittetorch below
 
    0_getting_started/index
    1_examples/index
- 
-..  2_benchmarks/index
-..  3_python_api_documentation/index
+   2_benchmarks/index
+   3_python_api_documentation/index
 ..  4_extra_options/index
 
 
@@ -75,6 +72,7 @@ Developers & Contributors
 * Jolien Malfait
 * Mats Esseldeurs
 * Arnout Coenegrachts
+* Owen Vermeulen
 
 Acknowledgements
 ****************

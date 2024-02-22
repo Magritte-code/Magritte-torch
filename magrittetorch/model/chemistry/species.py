@@ -11,8 +11,10 @@ class Species:
     def __init__(self, params: Parameters, dataCollection : DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.abundance: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, self.parameters.nspecs], units.m**-3, storagedir+"abundance"); self.dataCollection.add_data(self.abundance, "species abundance") # abundance; number density per m**3
-        self.symbol : StorageNdarray = StorageNdarray(Types.NpString, [self.parameters.nspecs], units.dimensionless_unscaled, storagedir+"species", legacy_converter = [storagedir+"species", self.__legacy_get_symbol]); self.dataCollection.add_data(self.symbol, "species symbol") #symbols for the species
+        self.abundance: StorageTensor = StorageTensor(Types.GeometryInfo, [self.parameters.npoints, self.parameters.nspecs], units.m**-3, storagedir+"abundance")#: Species abundance; dtype= :attr:`.Types.GeometryInfo`, dims=[:py:attr:`.Parameters.npoints`, :py:attr:`.Parameters.nspecs`], unit = units.m**-3
+        self.dataCollection.add_data(self.abundance, "species abundance")
+        self.symbol : StorageNdarray = StorageNdarray(Types.NpString, [self.parameters.nspecs], units.dimensionless_unscaled, storagedir+"species", legacy_converter = [storagedir+"species", self.__legacy_get_symbol])#: symbols for the species; dtype= :attr:`.Types.NpString`, dims=[:py:attr:`.Parameters.nspecs`], unit = units.dimensionless_unscaled
+        self.dataCollection.add_data(self.symbol, "species symbol")
         #Note: symbol currently commented out, as some older magritte models might not store this unfortunately
 
     def __legacy_get_symbol(self, symbol: np.ndarray) -> np.ndarray[Types.NpString]:

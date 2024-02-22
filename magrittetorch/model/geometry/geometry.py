@@ -11,27 +11,20 @@ from magrittetorch.utils.constants import min_dist
 from astropy.constants import c
 import torch
 
-#err, do we need these two enums?
-class Frame(Enum):
-    CoMoving = 0
-    Rest = 1
-
-class Tracer(Enum):
-    Defaulttracer = 0
-    Imagetracer = 1
 
 class GeometryType(Enum):
-    General3D: int = 0 #TODO: add options for the general3D geometry: specify which type of boundary is expected; axisalignedcube or sphere (for easier raytracing; Note: enum inside enum looks ridiculous, so just add extra enums to this list)
-    SpericallySymmetric1D: int = 1
+    General3D: int = 0#: General 3D geometry
+    SpericallySymmetric1D: int = 1#: Spherically symmetric 1D geometry
 
 class Geometry:
     def __init__(self, params: Parameters, dataCollection: DataCollection) -> None:
         self.parameters: Parameters = params
         self.dataCollection : DataCollection = dataCollection
-        self.boundary: Boundary = Boundary(params, self.dataCollection)
-        self.points: Points = Points(params, self.dataCollection)
-        self.rays: Rays = Rays(params, self.dataCollection)
-        self.geometryType: EnumParameter[GeometryType, type[GeometryType]] = EnumParameter(GeometryType, "geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType)); self.dataCollection.add_local_parameter(self.geometryType)
+        self.boundary: Boundary = Boundary(params, self.dataCollection)#: Boundary module
+        self.points: Points = Points(params, self.dataCollection)#: Points module
+        self.rays: Rays = Rays(params, self.dataCollection)#: Rays module
+        self.geometryType: EnumParameter[type[GeometryType]] = EnumParameter(GeometryType, "geometryType", ("spherical_symmetry", self.__legacy_convert_geometryType))#: Geometry type of the model
+        self.dataCollection.add_local_parameter(self.geometryType)
 
     def __legacy_convert_geometryType(self, is_spherically_symmetric: bool) -> GeometryType:
         print("is the model spherically symmetric", is_spherically_symmetric, type(is_spherically_symmetric))

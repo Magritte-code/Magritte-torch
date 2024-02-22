@@ -83,16 +83,16 @@ def create_cubic_uniform_hull(xyz_min, xyz_max, order=3):
     z_vector = np.linspace(xyz_min[2], xyz_max[2], nz)
 
     #x plane does not yet intersect with other planes
-    xmin_plane = grid3D(np.array([xyz_min[0]]), y_vector, z_vector)
-    xmax_plane = grid3D(np.array([xyz_max[0]]), y_vector, z_vector)
+    xmin_plane = grid3D([xyz_min[0]], y_vector, z_vector)
+    xmax_plane = grid3D([xyz_max[0]], y_vector, z_vector)
 
     #y plane intersects with x plane, so using reduced vectors for x coordinate
-    ymin_plane = grid3D(x_vector[1:nx-1], np.array([xyz_min[1]]), z_vector)
-    ymax_plane = grid3D(x_vector[1:nx-1], np.array([xyz_max[1]]), z_vector)
+    ymin_plane = grid3D(x_vector[1:nx-1], [xyz_min[1]], z_vector)
+    ymax_plane = grid3D(x_vector[1:nx-1], [xyz_max[1]], z_vector)
 
     #z plane also intersects with x plane
-    zmin_plane = grid3D(x_vector[1:nx-1], y_vector[1:ny-1], np.array([xyz_min[2]]))
-    zmax_plane = grid3D(x_vector[1:nx-1], y_vector[1:ny-1], np.array([xyz_max[2]]))
+    zmin_plane = grid3D(x_vector[1:nx-1], y_vector[1:ny-1], [xyz_min[2]])
+    zmax_plane = grid3D(x_vector[1:nx-1], y_vector[1:ny-1], [xyz_max[2]])
 
     #At the edges, the hull will contain duplicate points. These need to be removed= 0)
     hull = np.concatenate((xmin_plane, xmax_plane, ymin_plane, ymax_plane, zmin_plane, zmax_plane), axis = 0)
@@ -103,11 +103,19 @@ def create_cubic_uniform_hull(xyz_min, xyz_max, order=3):
 #Allows us to create surface point cloud by inserting 2 vectors (and a single value for the last coordinate)
 # @numba.njit(cache=True)
 def grid3D(x, y, z):
-    xyz = np.empty(shape=(x.size*y.size*z.size, 3))
+    #if x has a unit, the result will also have the same unit
+    if isinstance(x, Quantity):
+        unit = x.unit
+        xyz = np.empty((len(x)*len(y)*len(z), 3)) * unit
+    elif isinstance(y, Quantity):
+        unit = y.unit
+        xyz = np.empty((len(x)*len(y)*len(z), 3)) * unit
+    else:
+        xyz = np.empty((len(x)*len(y)*len(z), 3))
     idx = 0
-    for k in range(x.size):
-        for j in range(y.size):
-            for i in range(z.size):
+    for k in range(len(x)):
+        for j in range(len(y)):
+            for i in range(len(z)):
                 xyz[idx] = [x[k], y[j], z[i]]
                 idx+=1
     return xyz

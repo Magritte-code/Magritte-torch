@@ -37,7 +37,8 @@ extensions = [
     "sphinx.ext.napoleon",
     "breathe",
     'sphinx_copybutton',
-    'nbsphinx'
+    'nbsphinx',
+    'enum_tools.autoenum'
 ]
 
 breathe_default_project = "Magrittetorch"
@@ -79,4 +80,27 @@ call('doxygen Doxyfile', shell=True)
 
 autodoc_member_order = "groupwise"
 autodoc_default_flags = ["members"]
+# autodoc_default_options = {
+#     'members': True,
+#     'member-order': 'bysource',
+#     'special-members': '__init__',
+#     'undoc-members': True,
+#     'exclude-members': '__weakref__'
+# } 
 autosummary_generate = True
+
+
+# -- Custom CSS for Notebooks ------------------------------------------------
+# Overriding output_area style to make it scrollable
+nbsphinx_prolog = """
+.. raw:: html
+
+    <style>
+    .output_area{
+        max-height: 500px;
+        overflow-y: scroll;
+    }
+    </style>
+"""
+
+default_role = 'py:obj'
