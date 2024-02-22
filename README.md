@@ -47,5 +47,3 @@ examples to facilitate its independent use. Until then, please
 * Arnout Coenegrachts
 * Owen Vermeulen
 
-# Other sections
-TODO: installation (this library will be written entirely in python, so pip/conda install should be possible). These sections will be added when magritte-torch is sufficiently developed.
