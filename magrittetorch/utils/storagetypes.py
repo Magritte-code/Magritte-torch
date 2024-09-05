@@ -667,11 +667,11 @@ class DataCollection():
 class Types:
     """Contains expected datatypes for torch.Tensor data. Summarized together such that tweaking them is more simple
     """
-    GeometryInfo = torch.float64#: for positions, velocities, densities, temperatures
+    GeometryInfo = torch.float32 #: for positions, velocities, densities, temperatures
     IndexInfo = torch.int64 #: for index information; too many torch functions require 64 bit integers
     LevelPopsInfo = torch.float64 #: for level population related information
     #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
-    FrequencyInfo = torch.float64 #: for frequency-related information
+    FrequencyInfo = torch.float32 #: for frequency-related information
     Enum = torch.int64 #: for enums
     #64 bit signed int for enums, as the enum values themselves is not a native pytorch datatype
     Bool = torch.bool #: for truth values

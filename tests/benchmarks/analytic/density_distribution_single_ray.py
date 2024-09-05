@@ -21,6 +21,9 @@ from magrittetorch.model.geometry.boundary import BoundaryType
 import magrittetorch.tools.timer as timer
 import magrittetorch.tools.radiativetransferutils as rtutils
 from magrittetorch.algorithms.solvers import solve_long_characteristics_single_direction_all_NLTE_freqs#TODO: add single iteration version that return mean (line) intensity
+import magrittetorch.utils.constants as magritte_constants
+
+magritte_constants.min_line_opacity = 1e-13
 
 
 dimension = 1
@@ -177,7 +180,6 @@ def create_and_run_model (a_or_b: str) -> None:
         plt.xscale('log')
         plt.xlabel('r [m]')
         plt.ylabel('Mean intensity [W/m$^{2}$]')
-        plt.show()
         plt.savefig(f'{resdir}{modelName}-{timestamp}.png', dpi=150)
 
     return
