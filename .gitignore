@@ -1,5 +1,5 @@
 *.json
-*.ini
+# *.ini
 SOURCES.txt
 requires.txt
 build/
@@ -11,3 +11,6 @@ tests/results/*
 *.hdf5
 docs/src/doxygen/*
 *.npy
+*.png
+PKG-INFO
+*.egg-info

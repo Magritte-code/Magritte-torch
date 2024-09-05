@@ -128,7 +128,6 @@ class Geometry:
             case _:
                 raise NotImplementedError("Geometry type not yet supported: ", self.geometryType)
 
-    # @torch.compile
     def get_next_3D_geometry(self, origin_coords : torch.Tensor, raydirection : torch.Tensor, curr_points_index : torch.Tensor, device : torch.device, positions_device :torch.Tensor, neighbors_device : torch.Tensor, n_neighbors_device : torch.Tensor, cum_n_neighbors_device : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Returns the next point on the ray in a general 3D geometry, given the raydirection.
 

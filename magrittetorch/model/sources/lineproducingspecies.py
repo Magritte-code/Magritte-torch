@@ -5,7 +5,7 @@ from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.logger import Logger, Level
 from magrittetorch.model.sources.linequadrature import LineQuadrature
 from magrittetorch.algorithms.torch_algorithms import multi_arange
-from magrittetorch.utils.constants import min_level_pop, population_inversion_fraction
+from magrittetorch.utils.constants import min_level_pop, population_inversion_fraction, min_line_opacity
 import torch
 from astropy import units
 import astropy.constants
@@ -63,7 +63,8 @@ class LineProducingSpecies:
         device_einstein_Bs = self.linedata.Bs.get()
         device_irad = self.linedata.irad.get()
         device_jrad = self.linedata.jrad.get()
-        return  astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1))#type: ignore
+        return torch.maximum(astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)), min_line_opacity*torch.ones((self.parameters.npoints.get(), self.linedata.nrad.get()))) #type: ignore
+        # return  astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1))#type: ignore
 
     def _infer_line_emissivities(self) -> torch.Tensor:
         device_pops = self.population.get()
@@ -81,50 +82,91 @@ class LineProducingSpecies:
         Returns:
             torch.Tensor: The corrected population
         """
-        device_pops = new_population
-        device_einstein_Ba = self.linedata.Ba.get(device)
-        device_einstein_Bs = self.linedata.Bs.get(device)
-        device_irad = self.linedata.irad.get(device)
-        device_jrad = self.linedata.jrad.get(device)
-        npoints = self.parameters.npoints.get()
-        nlev = self.linedata.nlev.get()
-        gas_temperature = self.dataCollection.get_data("gas temperature").get(device).unsqueeze(1).expand(-1, nlev)#type: ignore #dims: [parameters.npoints, linedata.nlev]
-        lev_weight = self.linedata.weight.get(device).expand(npoints, -1)#type: ignore
-        lev_energy = self.linedata.energy.get(device).expand(npoints, -1)#type: ignore
-        masering_levels = torch.zeros((npoints, nlev), dtype=Types.Bool, device=device)
-        prev_n_masering_lines = 0
-        #TODO: it might possible to optimize this further, by only considering the points at which masers occur
-        while True:
-            #determine the masering lines by computing the line opacity prefactors, which are not necessary for the comparison
-            #Note: near to masering lines will also be set to LTE
-            masering_lines = (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - population_inversion_fraction * device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)) <= 0.0#dims: [parameters.npoints, linedata.nrad]
-            #current iter masering lines
-            #Amount of masering levels will only increase
-            #TODO: check whether the simultaneous assignment contains errors
-            masering_levels = masering_levels.scatter_add(1, device_irad.unsqueeze(0).expand(npoints, -1), masering_lines)
-            masering_levels = masering_levels.scatter_add(1, device_jrad.unsqueeze(0).expand(npoints, -1), masering_lines)
-            # masering_levels[:, device_irad] = torch.logical_or(masering_levels[:, device_irad], masering_lines)
-            # masering_levels[:, device_jrad] = torch.logical_or(masering_levels[:, device_jrad], masering_lines)
-            curr_n_masering_levels = torch.sum(masering_levels)
 
-            sum_masering_pop_before_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
-            #for every point, set the masering lines simultaneously to LTE
-            new_population[masering_levels] = lev_weight[masering_levels] * torch.exp(-lev_energy[masering_levels] / (astropy.constants.k_B.value * gas_temperature[masering_levels])) + min_level_pop#type: ignore
+        return new_population#TEST: not going to correct levelpops, instead changing the line opacity
 
-            sum_masering_pop_after_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
-            #and renormalize them
-            new_population[masering_levels] *= (((sum_masering_pop_before_adjust / sum_masering_pop_after_adjust)).unsqueeze(1).repeat(1, nlev))[masering_levels]
+        # device_pops = new_population
+        # device_einstein_Ba = self.linedata.Ba.get(device)
+        # device_einstein_Bs = self.linedata.Bs.get(device)
+        # device_irad = self.linedata.irad.get(device)
+        # device_jrad = self.linedata.jrad.get(device)
+        # device_pop_tot = self.population_tot.get(device)
+        # npoints = self.parameters.npoints.get()
+        # nlev = self.linedata.nlev.get()
+        # gas_temperature = self.dataCollection.get_data("gas temperature").get(device).unsqueeze(1).expand(-1, nlev)#type: ignore #dims: [parameters.npoints, linedata.nlev]
+        # lev_weight = self.linedata.weight.get(device).expand(npoints, -1)#type: ignore
+        # lev_energy = self.linedata.energy.get(device).expand(npoints, -1)#type: ignore
+        # masering_levels = torch.zeros((npoints, nlev), dtype=Types.Bool, device=device)
+        # prev_n_masering_lines = 0
 
-            if curr_n_masering_levels == prev_n_masering_lines:
-                break
-            prev_n_masering_lines = curr_n_masering_levels
+        # #Attempt 2: put al levels of the masering points to LTE, but fit the temperature to the level populations
+        # masering_lines = (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - population_inversion_fraction * device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)) <= 0.0#dims: [parameters.npoints, linedata.nrad]
+        # masering_levels = masering_levels.scatter_add(1, device_irad.unsqueeze(0).expand(npoints, -1), masering_lines)
+        # masering_levels = masering_levels.scatter_add(1, device_jrad.unsqueeze(0).expand(npoints, -1), masering_lines)
+        # masering_positions = torch.any(masering_lines, dim=1)#dims: [parameters.npoints]
+        # print("number of masering positions", torch.sum(masering_positions))
+        # # print(device_pops[masering_positions, :].shape, device_pop_tot[masering_positions].shape)
+        # # print(lev_weight[masering_positions, :].shape, lev_energy[masering_positions].shape, gas_temperature[masering_positions].shape)
 
-        if prev_n_masering_lines>0:
-            Logger().log("Negative line opacities encountered. Corresponding levels have been set to LTE.", Level.WARNING)
+        # #Now go fit the following values linearly: ln(rel_pop/w) = -E/k * 1/T + C
+        # yvals = torch.log(device_pops[masering_positions, :]/device_pop_tot[masering_positions, None]/self.linedata.weight.get(device)[None, :])#dims: [nmasering_positions, linedata.nlev]
+        # #And assume that the energy of the base level is 0, such that we do not need to fit the constant C
+        # #FIXME: either check that the base level is the first level, or do a least squares fit with two unknowns
+        # # yvals = yvals - yvals[:, 0].unsqueeze(1).expand(-1, nlev)#type: ignore
+        # # xvals = -lev_energy[masering_positions, :]/(astropy.constants.k_B.value)#dims: [nmasering_positions, linedata.nlev]
+        # xvals = -(self.linedata.energy.get(device)/astropy.constants.k_B.value)[None, :]#dims: [1, linedata.nlev]
+        # #extend xvals with a column of ones to fit the constant C
+        # xvals_extended = torch.cat((xvals, torch.ones_like(xvals)), dim=0).T#dims: [nmasering_positions, 2]
+        # # print(xvals_extended, xvals_extended.shape)
+        # #fit the temperature
+        # inv_temp = torch.linalg.solve(xvals_extended.T @ xvals_extended, xvals_extended.T @ yvals.T)[0, :]#dims: [nmasering_positions]
+        # # inv_temp = torch.sum(yvals*xvals, dim=1)/torch.sum(xvals*xvals, dim=1)#dims: [nmasering_positions]
+        # # print("inv_temp", inv_temp)
+
+        # #now create new populations from another blackbody distribution
+        # new_population[masering_positions, :] = lev_weight[masering_positions, :] * torch.exp(-lev_energy[masering_positions, :] / astropy.constants.k_B.value * inv_temp.unsqueeze(1).expand(-1, nlev)) + min_level_pop#type: ignore
+        # new_population[masering_positions, :] = new_population[masering_positions, :] / torch.sum(new_population[masering_positions, :], dim=1)[:, None] * device_pop_tot[masering_positions, None]#type: ignore
+        # #or just only apply this to the masering levels; note: no conservation of total population is applied
+        # # new_pops = lev_weight[masering_positions, :] * torch.exp(-lev_energy[masering_positions, :] / astropy.constants.k_B.value * inv_temp.unsqueeze(1).expand(-1, nlev)) + min_level_pop#type: ignore
+        # # new_pops = new_pops / torch.sum(new_pops, dim=1)[:, None] * device_pop_tot[masering_positions, None]#type: ignore
+        # # new_population[masering_levels] = new_pops[masering_levels[masering_positions, :]]
+
+        # if torch.any(masering_positions):
+        #     Logger().log("Negative line opacities encountered. Corresponding positions have been set to LTE.", Level.WARNING)
+
+
+        # # #TODO: it might possible to optimize this further, by only considering the points at which masers occur
+        # # while True:
+        # #     #determine the masering lines by computing the line opacity prefactors, which are not necessary for the comparison
+        # #     #Note: near to masering lines will also be set to LTE
+        # #     masering_lines = (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - population_inversion_fraction * device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)) <= 0.0#dims: [parameters.npoints, linedata.nrad]
+        # #     #current iter masering lines
+        # #     #Amount of masering levels will only increase
+        # #     #TODO: check whether the simultaneous assignment contains errors
+        # #     masering_levels = masering_levels.scatter_add(1, device_irad.unsqueeze(0).expand(npoints, -1), masering_lines)
+        # #     masering_levels = masering_levels.scatter_add(1, device_jrad.unsqueeze(0).expand(npoints, -1), masering_lines)
+        # #     # masering_levels[:, device_irad] = torch.logical_or(masering_levels[:, device_irad], masering_lines)
+        # #     # masering_levels[:, device_jrad] = torch.logical_or(masering_levels[:, device_jrad], masering_lines)
+        # #     curr_n_masering_levels = torch.sum(masering_levels)
+
+        # #     sum_masering_pop_before_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
+        # #     #for every point, set the masering lines simultaneously to LTE
+        # #     new_population[masering_levels] = lev_weight[masering_levels] * torch.exp(-lev_energy[masering_levels] / (astropy.constants.k_B.value * gas_temperature[masering_levels])) + min_level_pop#type: ignore
+
+        # #     sum_masering_pop_after_adjust = torch.sum(new_population * masering_levels, dim=1)#dims: [parameters.npoints]
+        # #     #and renormalize them
+        # #     new_population[masering_levels] *= (((sum_masering_pop_before_adjust / sum_masering_pop_after_adjust)).unsqueeze(1).repeat(1, nlev))[masering_levels]
+
+        # #     if curr_n_masering_levels == prev_n_masering_lines:
+        # #         break
+        # #     prev_n_masering_lines = curr_n_masering_levels
+
+        # # if prev_n_masering_lines>0:
+        # #     Logger().log("Negative line opacities encountered. Corresponding levels have been set to LTE.", Level.WARNING)
         
-        return new_population
+        # return new_population
 
-        
+    #TODO: add warning to this function in 
     def get_line_opacities_emissivities(self, device : torch.device=torch.device("cpu")) -> tuple[torch.Tensor, torch.Tensor]:
         """Computes the line opacities and emissivities for this species
 
@@ -227,8 +269,8 @@ class LineProducingSpecies:
         min_bound_linefreqs = sorted_linefreqs_device[None, :] - MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
         max_bound_linefreqs = sorted_linefreqs_device[None, :] + MAX_DISTANCE_OPACITY_CONTRIBUTION * sorted_linewidths_device
 
-        lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False)
-        upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies)
+        lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False).to(Types.IndexInfo)
+        upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies).to(Types.IndexInfo)
         return lower_indices, upper_indices
     
     def get_global_bound_relevant_line_indices(self, opacity_compute_frequencies: torch.Tensor, max_shift:torch.Tensor,  device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -247,8 +289,8 @@ class LineProducingSpecies:
         min_bound_linefreqs = self.sorted_linefreqs.get(device) * (1.0 - 10.0 * max_relative_linewidth - 2.0*max_shift)
         max_bound_linefreqs = self.sorted_linefreqs.get(device) * (1.0 + 10.0 * max_relative_linewidth + 2.0*max_shift)
 
-        lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False)
-        upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies)
+        lower_indices = torch.searchsorted(max_bound_linefreqs, opacity_compute_frequencies, right=False).to(Types.IndexInfo)
+        upper_indices = torch.searchsorted(min_bound_linefreqs, opacity_compute_frequencies).to(Types.IndexInfo)
         return lower_indices, upper_indices
     
     #DEPRECATED: use pre-evaluated line instead

@@ -62,13 +62,12 @@ class Image:
             None
         """
         # Set the image data unit correctly
-        match image_type:
-            case ImageType.Intensity:
-                self.I.unit = units.W*units.m**-2*units.Hz**-1*units.sr**-1
-            case ImageType.OpticalDepth:
-                self.I.unit = units.dimensionless_unscaled
-            case _:
-                raise NotImplementedError("Image type not implemented")
+        if image_type == ImageType.Intensity:
+            self.I.unit = units.W*units.m**-2*units.Hz**-1*units.sr**-1
+        elif image_type == ImageType.OpticalDepth:
+            self.I.unit = units.dimensionless_unscaled
+        else:
+            raise NotImplementedError("Image type not implemented")
 
         raydir: torch.Tensor = self.ray_direction.get() #dims: [3]
         # Compute the rotation angles alpha and beta

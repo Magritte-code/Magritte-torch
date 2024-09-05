@@ -99,6 +99,7 @@ class StorageTensor():
             ValueError: If the dimension size is not equal to the set integer size
             TypeError: Dev error: If the dimensions to check contain wrong types
         """
+        tensor = tensor.to(self.dtype)
         self.check_dims(tensor)
         self.tensor = tensor
         #also invalidate mapped tensors, as the data is no longer correct
@@ -245,6 +246,7 @@ class InferredTensor():
             ValueError: If the dimension size is not equal to the set integer size
             TypeError: Dev error: If the dimensions to check contain wrong types
         """
+        tensor = tensor.to(self.dtype)
         self.check_dims(tensor)
         self.tensor = tensor
         #also invalidate mapped tensors, as the data is no longer correct
@@ -414,6 +416,7 @@ class StorageNdarray():
             ValueError: If the dimension size is not equal to the set integer size
             TypeError: Dev error: If the dimensions to check contain wrong types
         """
+        array = array.astype(self.dtype)
         self.check_dims(array)
         self.array = array
 
@@ -665,7 +668,7 @@ class Types:
     """Contains expected datatypes for torch.Tensor data. Summarized together such that tweaking them is more simple
     """
     GeometryInfo = torch.float64#: for positions, velocities, densities, temperatures
-    IndexInfo = torch.int64 #: for index information
+    IndexInfo = torch.int64 #: for index information; too many torch functions require 64 bit integers
     LevelPopsInfo = torch.float64 #: for level population related information
     #64 bit float; I would like to have 128 bit instead for more accurate Ng-acceleration computations, but this not supported #for storing level populations
     FrequencyInfo = torch.float64 #: for frequency-related information

@@ -151,7 +151,6 @@ class Lines:
         return line_frequencies
 
 
-    # @torch.compile
     def get_sum_line_opacities_emissivities_using_freqevalhelper(self, origin_point_indices: torch.Tensor, curr_point_indices: torch.Tensor, doppler_shift: torch.Tensor, freqEvalHelper: FrequencyEvalHelper) -> Tuple[torch.Tensor, torch.Tensor]:
         """Computes the total opacity and emissivity contributions of all lines.
 

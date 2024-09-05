@@ -167,7 +167,7 @@ def solve_long_characteristics_ALI_diag(model: Model, device: torch.device) -> t
     rr = 0
 
     memManager = MemoryManager()
-    solve_single_dir = lambda indices: solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions[indices], start_velocities[indices], indices, freqhelper, ALIfreqhelper, device)
+    solve_single_dir = lambda indices: solve_long_characteristics_ALI_diag_single_direction(model, raydirs[raydir_index], start_positions[indices, :], start_velocities[indices, :], indices, freqhelper, ALIfreqhelper, device)
 
 
     for raydir_index in range(raydirs.shape[0]):
@@ -395,7 +395,6 @@ def solve_long_characteristics_single_direction_all_NLTE_freqs(model: Model, ray
     return solve_long_characteristics_single_direction(model, raydir, model_positions, model_velocities, torch.arange(model.parameters.npoints.get()), freqhelper, device)
 
 
-# @torch.compile
 def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch.Tensor:
     """Computes the mean line intensity J_ij at every point in the model
 
@@ -418,7 +417,7 @@ def solve_long_characteristics_NLTE(model: Model, device: torch.device) -> torch
 
     #Initialize memory manager
     memManager = MemoryManager()
-    solve_single_dir = lambda indices: solve_long_characteristics_single_direction(model, raydirs[raydir_index], model_positions[indices], model_velocities[indices], indices, freqhelper, device)
+    solve_single_dir = lambda indices: solve_long_characteristics_single_direction(model, raydirs[raydir_index], model_positions[indices, :], model_velocities[indices, :], indices, freqhelper, device)
 
     #add everything, with correct contribution
     for raydir_index in range(raydirs.shape[0]):

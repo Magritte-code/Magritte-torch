@@ -31,13 +31,12 @@ dependencies = [
     "scipy", # for interpolation
     "plotly", # for visualization
     "palettable", # for color maps
-    "psutil", # for checking memory usage
     "yt",   # visualization
     "ipykernel", # for jupyter notebooks
     "healpy", #angular discretization
     "jupyter", # for jupyter notebooks
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.10"# min python version for decent type hints allowing | operator for type | None
 
 [project.optional-dependencies]
 dev = ["black", "pip-tools", "pytest"]

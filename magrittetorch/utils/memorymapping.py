@@ -5,7 +5,6 @@ from typing import Optional, Any, Generic, TypeVar, Type, List, Union, Tuple, Ca
 from magrittetorch.utils.storagetypes import DataCollection
 from magrittetorch.utils.logger import Logger, Level
 import torch
-import psutil
 
 
 class MemoryManager:
@@ -37,6 +36,7 @@ class MemoryManager:
                 for split in torch.chunk(curr_data, self.curr_division_factor):
                     self.logger.log(f"processing split {chunk_index} of {self.curr_division_factor}", Level.DEBUG)
                     chunk_index+=1
+                    self.logger.log(f'Min split: {torch.min(split)}; Max split: {torch.max(split)}', Level.DEBUG)
                     output = lambdafun(split)
                     if isinstance(output, tuple):
                         if first:#concat output size need to be initialized
