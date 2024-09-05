@@ -3,6 +3,7 @@ import astropy
 from astropy.units import Quantity
 #file containing many constants that will be used throughout magritte-torch
 #includes both arbitrary choices of constants for numerical stability and more
+min_line_opacity = 1e-22#FOR TESTING
 min_opacity = 1e-100 #for bounding source function from below; assumes 64 bit float for opacity
 min_freq_difference = 1e-100 # assumes 64 bit float for frequency
 min_dist = 1e-100 # assumes 64 bit float for distances
