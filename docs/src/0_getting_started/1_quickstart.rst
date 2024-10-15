@@ -23,7 +23,8 @@ and activate it with:
     conda activate magrittetorch
 
 This environment has to be active whenever Magrittetorch is installed or used!
-Proceed by installing the latest version of Magrittetorch (including its python dependencies) with pip:
+Then install the latest version of PyTorch using pip by following the instructions on the `official website <https://pytorch.org/get-started/locally/>`_.
+Afterwards, proceed by installing the latest version of Magrittetorch (including its python dependencies) with pip:
 
 .. code-block:: shell
 
