@@ -162,7 +162,7 @@ def create_and_run_model (nosave=False):
 
 
     #error bounds are chosen somewhat arbitrarily, based on previously obtained results; this should prevent serious regressions.
-    FIRSTORDER_AS_EXPECTED=(np.max(error_u_0s)<9e-9)
+    FIRSTORDER_AS_EXPECTED=(np.max(error_u_0s)<5.5e-7)#within same order of magnitude as precision of 32bit float
 
     if not FIRSTORDER_AS_EXPECTED:
         print("First order solver max error too large: ", np.max(error_u_0s))

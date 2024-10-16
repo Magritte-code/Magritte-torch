@@ -15,6 +15,7 @@ import ipywidgets        as widgets
 import astropy.constants as constants
 import astropy.units as units
 from astropy.units import Quantity
+import magrittetorch.utils.constants as magritte_constants
 import magrittetorch.tools.setup as setup
 from magrittetorch.model.geometry.geometry import GeometryType
 from magrittetorch.model.geometry.boundary import BoundaryType
@@ -25,6 +26,8 @@ from scipy.interpolate import interp1d
 
 #Note: compared to C++ magritte, we use a more sparse discretization for these benchmarks to speed up the tests
 # this does slightly affect the accuracy, but the benchmarks can still run manually with more resolution to be compared to the C++ results 
+
+magritte_constants.min_line_opacity = 1e-13
 
 dimension = 1
 npoints   = 100
@@ -95,6 +98,7 @@ def create_and_run_model (a_or_b, nosave = False):
 
     timer2 = timer.Timer('running model')
     timer2.start()
+    # compute_level_populations(model, device, 10, use_ng_acceleration=True, use_ALI=True, max_its_between_ng_accel=8)
     compute_level_populations(model, device, 50, use_ng_acceleration=True, use_ALI=True, max_its_between_ng_accel=8)
     timer2.stop()
 

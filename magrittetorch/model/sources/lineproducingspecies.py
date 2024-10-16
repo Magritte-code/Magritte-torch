@@ -5,7 +5,7 @@ from magrittetorch.model.parameters import Parameters
 from magrittetorch.utils.logger import Logger, Level
 from magrittetorch.model.sources.linequadrature import LineQuadrature
 from magrittetorch.algorithms.torch_algorithms import multi_arange
-from magrittetorch.utils.constants import min_level_pop, population_inversion_fraction, min_line_opacity
+import magrittetorch.utils.constants as magritte_constants
 import torch
 from astropy import units
 import astropy.constants
@@ -50,7 +50,7 @@ class LineProducingSpecies:
         return self.get_relative_line_width()
 
     def _infer_population(self) -> torch.Tensor:
-        non_normalized_pops = min_level_pop + torch.reshape(self.linedata.weight.get(), (1,-1)) * torch.exp(-torch.reshape(self.linedata.energy.get(), (1,-1)) / (astropy.constants.k_B.value * torch.reshape(self.dataCollection.get_data("gas temperature").get(), (-1,1))))#type: ignore
+        non_normalized_pops = magritte_constants.min_level_pop + torch.reshape(self.linedata.weight.get(), (1,-1)) * torch.exp(-torch.reshape(self.linedata.energy.get(), (1,-1)) / (astropy.constants.k_B.value * torch.reshape(self.dataCollection.get_data("gas temperature").get(), (-1,1))))#type: ignore
         return torch.reshape(self.population_tot.get(), (-1,1)) * non_normalized_pops / torch.sum(non_normalized_pops, dim = 1).reshape(-1,1)
 
 
@@ -63,14 +63,15 @@ class LineProducingSpecies:
         device_einstein_Bs = self.linedata.Bs.get()
         device_irad = self.linedata.irad.get()
         device_jrad = self.linedata.jrad.get()
-        return torch.maximum(astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)), min_line_opacity*torch.ones((self.parameters.npoints.get(), self.linedata.nrad.get()))) #type: ignore
-        # return  astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1))#type: ignore
+        device_linefreqs = self.linedata.frequency.get()
+        return torch.maximum(device_linefreqs * astropy.constants.h.value / (4.0 * np.pi) * (device_pops[:, device_jrad] * device_einstein_Ba.reshape(1,-1) - device_pops[:, device_irad] * device_einstein_Bs.reshape(1,-1)), magritte_constants.min_line_opacity*torch.ones((self.parameters.npoints.get(), self.linedata.nrad.get()))) #type: ignore
 
     def _infer_line_emissivities(self) -> torch.Tensor:
         device_pops = self.population.get()
         device_einstein_A = self.linedata.A.get()
         device_irad = self.linedata.irad.get()
-        return  astropy.constants.h.value / (4.0 * np.pi) * device_pops[:, device_irad] * device_einstein_A.reshape(1,-1)#type: ignore
+        device_linefreqs = self.linedata.frequency.get()
+        return  device_linefreqs * astropy.constants.h.value / (4.0 * np.pi) * device_pops[:, device_irad] * device_einstein_A.reshape(1,-1)#type: ignore
     
     def correct_population(self, new_population: torch.Tensor, device: torch.device) -> torch.Tensor:
         """First checks at which lines population inversions occur, and adjusts the population accordingly, setting the offending level populations to LTE.
@@ -168,7 +169,7 @@ class LineProducingSpecies:
 
     #TODO: add warning to this function in 
     def get_line_opacities_emissivities(self, device : torch.device=torch.device("cpu")) -> tuple[torch.Tensor, torch.Tensor]:
-        """Computes the line opacities and emissivities for this species
+        """Computes the line opacities and emissivities for this species (without multiplying with frequency)
 
         Args:
             device (torch.device, optional): Device on which to compute. Defaults to torch.device("cpu").
@@ -322,7 +323,7 @@ class LineProducingSpecies:
         eval_opacities = line_opacities[extended_point_indices, extended_line_indices] #dimensions = [N_LINE_EVALS]
         eval_emissivities = line_emissivities[extended_point_indices, extended_line_indices] #dimensions = [N_LINE_EVALS]
         extended_inv_line_widths = 1.0/sorted_linewidths_device[extended_point_indices, extended_line_indices] #dimensions = [N_LINE_EVALS]
-        line_profile_evaluation = sorted_linefreqs_device[extended_line_indices]*extended_inv_line_widths/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow((sorted_linefreqs_device[extended_line_indices] - extended_frequencies)*extended_inv_line_widths, 2)) #dimensions = [N_LINE_EVALS]
+        line_profile_evaluation = extended_inv_line_widths/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow((sorted_linefreqs_device[extended_line_indices] - extended_frequencies)*extended_inv_line_widths, 2)) #dimensions = [N_LINE_EVALS]
         #and we sum the computed results to get the total opacities/emissivities
         line_opacities = torch.zeros((Npoints*Nfreqs), dtype=Types.FrequencyInfo, device=device).scatter_add(0, scatter_indices, line_profile_evaluation * eval_opacities).reshape(Npoints, Nfreqs)
         line_emissivities = torch.zeros((Npoints*Nfreqs), dtype=Types.FrequencyInfo, device=device).scatter_add(0, scatter_indices, line_profile_evaluation * eval_emissivities).reshape(Npoints, Nfreqs)
@@ -345,7 +346,7 @@ class LineProducingSpecies:
         #by summing over all lines, we can write a more simple computation. performance seems to favor this method prior to 5 lines and the other past 5 lines. TODO: bench on GPU instead
         inverse_line_widths = 1.0/sorted_linewidths_device
         #very narrow line profile
-        line_profile_evaluation = sorted_linefreqs_device[None, None, :]*inverse_line_widths[:, None, :]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, None, :]*(sorted_linefreqs_device[None, None, :]-frequencies[:, :, None]), 2))
+        line_profile_evaluation = inverse_line_widths[:, None, :]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, None, :]*(sorted_linefreqs_device[None, None, :]-frequencies[:, :, None]), 2))
         line_opacities = torch.sum(line_profile_evaluation*line_opacities[:, None, :], dim=2)
         line_emissivities = torch.sum(line_profile_evaluation*line_emissivities[:, None, :], dim=2)
         return line_opacities, line_emissivities
@@ -367,7 +368,7 @@ class LineProducingSpecies:
         """
         inverse_line_widths = 1.0/sorted_linewidths_device
         #very narrow line profile
-        line_profile_evaluation = sorted_linefreqs_device[None, line_index]*inverse_line_widths[:, line_index]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, line_index]*(sorted_linefreqs_device[None, line_index]-frequencies), 2))
+        line_profile_evaluation = inverse_line_widths[:, line_index]/torch.sqrt(torch.pi*torch.ones(1, device=device))*torch.exp(-torch.pow(inverse_line_widths[:, line_index]*(sorted_linefreqs_device[None, line_index]-frequencies), 2))
         line_opacities = line_profile_evaluation*line_opacities[:, line_index]
         line_emissivities = line_profile_evaluation*line_emissivities[:, line_index]
         return line_opacities, line_emissivities

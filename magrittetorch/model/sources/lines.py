@@ -121,7 +121,7 @@ class Lines:
             dimensionless_diff_freq = dimensionless_curr_freq - dimensionless_prev_freq #+ min_freq_difference is not required, as the shift is large
             line_opacities = lspec.line_opacities.get(device)[:, freqhelper.corresponding_lines[i]]#dims: [NPOINTS, n_eval_freqs]
  
-            average_line_opacity = 0.5 * non_shifted_freqs[large_shift, :] * (line_opacities[curr_point_indices[large_shift], :] + line_opacities[prev_point_indices[large_shift], :])
+            average_line_opacity = 0.5 * (line_opacities[curr_point_indices[large_shift], :] + line_opacities[prev_point_indices[large_shift], :])
             erfterm = 0.5 * average_line_opacity / dimensionless_diff_freq * (torch.erf(dimensionless_curr_freq) - torch.erf(dimensionless_prev_freq))
             line_optical_depth[large_shift, :] = distance_increments[large_shift, None] / mean_linewidth[:, corresponding_lines] * erfterm
 

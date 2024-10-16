@@ -182,5 +182,5 @@ class Boundary:
         Returns:
             _type_: The blackbody intensity. Has dimensions [NPOINTS, NFREQS]
         """
-        return 2.0 * constants.h.value / constants.c.value**2 * frequency**3 / torch.expm1(constants.h.value / constants.k_B.value * frequency / temperature[:, None])#type: ignore
+        return 2.0 * constants.h.value * frequency**3 / constants.c.value**2 / torch.expm1(constants.h.value / constants.k_B.value * frequency / temperature[:, None])#type: ignore
     

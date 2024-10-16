@@ -21,7 +21,9 @@ from magrittetorch.model.geometry.boundary import BoundaryType
 import magrittetorch.tools.timer as timer
 import magrittetorch.tools.radiativetransferutils as rtutils
 from magrittetorch.algorithms.solvers import solve_long_characteristics_single_direction_all_NLTE_freqs#TODO: add single iteration version that return mean (line) intensity
+import magrittetorch.utils.constants as magritte_constants
 
+magritte_constants.min_line_opacity = 1e-13
 
 
 dimension = 1
@@ -222,8 +224,7 @@ def create_and_run_model (a_or_b: str, nosave = False, use_widgets: bool = True)
         # plt.hist(error_u_2f.ravel(), bins=bins, histtype='step', label='2f', cumulative=True)
         plt.xscale('log')
         plt.legend()
-        plt.show()
-        # plt.savefig(f'{resdir}{modelName}_cumu-{timestamp}.png', dpi=150)
+        plt.savefig(f'{resdir}{modelName}_cumu-{timestamp}.png', dpi=150)
 
     #setting 'b' not yet used for testing
     if a_or_b == 'a':
