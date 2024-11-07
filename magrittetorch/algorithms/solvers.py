@@ -302,7 +302,7 @@ def get_total_optical_depth_single_direction(model: Model, raydir: torch.Tensor,
         device (torch.device): Device on which to compute and return the result.
 
     Returns:
-        torch.Tensor: The computed intensities [W/m**2/Hz/rad**2]. Has dimensions [NPOINTS, NFREQS]
+        torch.Tensor: The computed optical depths [.]. Has dimensions [NPOINTS, NFREQS]
     """
     #no work distribution, as this should happen in a higher function
 
@@ -464,8 +464,9 @@ def compute_level_populations_statistical_equilibrium(model: Model, indices: tor
     """
 
     if (ALI_diag is None):
-        ALI_diag_fraction = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
-        ALI_diag_Jdiff = torch.zeros((model.parameters.npoints.get(), model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
+        npoints = len(indices)
+        ALI_diag_fraction = torch.zeros((npoints, model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
+        ALI_diag_Jdiff = torch.zeros((npoints, model.sources.lines.get_total_number_lines()), dtype=Types.FrequencyInfo, device=device) #dims: [NPOINTS, NLINES]
     else:
         ALI_diag_fraction, ALI_diag_Jdiff = ALI_diag #dims: [NPOINTS, NLINES]
 
