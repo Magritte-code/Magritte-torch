@@ -131,8 +131,8 @@ def interpolate2D_linear(interpolation_position: torch.Tensor, interpolation_val
     eval_size_repeat = list(evaluation_points.size())
     eval_size_repeat[0] = 1
 
-    minval = torch.min(interpolation_value, dim=0).values
-    maxval = torch.max(interpolation_value, dim=0).values#dims: [OTHERDIMS]
+    minval = interpolation_value[0, :]
+    maxval = interpolation_value[-1, :]#dims: [OTHERDIMS]
     minval = minval.repeat(evaldim_size, 1)#dims: [Any1, OTHERDIMS]
     maxval = maxval.repeat(evaldim_size, 1)
     result = torch.zeros_like(evaluation_points, dtype=interpolation_value.dtype)

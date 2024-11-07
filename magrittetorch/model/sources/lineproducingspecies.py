@@ -397,7 +397,7 @@ class LineProducingSpecies:
         ng_accelerated_pops = ng_accelerated_pops * self.population_tot.get(device)[:, None] / torch.sum(ng_accelerated_pops, dim=1)[:, None]
         return ng_accelerated_pops
 
-    def compute_line_cooling(self, current_level_pops: torch.Tensor, device: torch.device) -> torch.Tensor:
+    def compute_line_cooling(self, current_level_pops: torch.Tensor, device: torch.device, indices: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Computes the line cooling rate for each point, based on the given level populations
             TODO: test whether memory error might occur for NLTE models with many levels; if so, consider adding memory management
@@ -405,6 +405,7 @@ class LineProducingSpecies:
         Args:
             current_level_pops (torch.Tensor): The current level populations. Has dimensions [parameters.npoints, linedata.nlev].
             device (torch.device): The device on which to compute.
+            indices (Optional[torch.Tensor], optional): The indices of the points to consider. Defaults to None.
 
         Returns:
             torch.Tensor: The line cooling rate. Has dimensions [parameters.npoints] and units W/m^3
@@ -414,6 +415,11 @@ class LineProducingSpecies:
         temperature = self.dataCollection.get_data("gas temperature").get(device)#dims = [parameters.npoints]
         abundance = self.dataCollection.get_data("species abundance").get(device)#dims: [parameters.npoints, parameters.nspecs]
         cooling_rate = torch.zeros(self.parameters.npoints.get(), device=device, dtype=Types.LevelPopsInfo)
+        if indices is not None:
+            temperature = temperature[indices]
+            abundance = abundance[indices]
+            cooling_rate = cooling_rate[indices]
+        
         for colpar in self.linedata.colpar:
             upper_levels = colpar.icol.get(device)
             lower_levels = colpar.jcol.get(device)
