@@ -412,12 +412,12 @@ class LineProducingSpecies:
         """
         # The cooling rate is given by the net rates of the collisional transitions times the energy difference between the levels
         energy = self.linedata.energy.get(device)#dims = [linedata.nlev]
-        temperature = self.dataCollection.get_data("gas temperature").get(device)#dims = [parameters.npoints]
+        temperature = self.dataCollection.get_data("gas temperature").get(device)#dims: [parameters.npoints]
         abundance = self.dataCollection.get_data("species abundance").get(device)#dims: [parameters.npoints, parameters.nspecs]
         cooling_rate = torch.zeros(self.parameters.npoints.get(), device=device, dtype=Types.LevelPopsInfo)
         if indices is not None:
             temperature = temperature[indices]
-            abundance = abundance[indices]
+            abundance = abundance[indices, :]
             cooling_rate = cooling_rate[indices]
         
         for colpar in self.linedata.colpar:
