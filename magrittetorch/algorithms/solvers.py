@@ -617,9 +617,9 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
                 if not level_pops_converged(lspec.population.get(device), computed_level_pops[lspecidx]):
                     all_species_converged = False
                 relative_diff_default_its += torch.mean(relative_error(computed_level_pops[lspecidx], lspec.population.get(device))).item()
-                lspec.population.set(computed_level_pops[lspec.linedata.num.get()].to("cpu"))
+                lspec.population.set(computed_level_pops[lspecidx].to("cpu"))
                 #Add current level pops to previous level pops
-                previous_level_pops[lspec.linedata.num.get()] = torch.cat((previous_level_pops[lspec.linedata.num.get()], computed_level_pops[lspec.linedata.num.get()].unsqueeze(0)), dim=0)
+                previous_level_pops[lspecidx] = torch.cat((previous_level_pops[lspecidx], computed_level_pops[lspecidx].unsqueeze(0)), dim=0)
 
             model.dataCollection.infer_data()
 
@@ -632,9 +632,9 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
 
                 for lspecidx in range(model.parameters.nlspecs.get()):
                     lspec = model.sources.lines.lineProducingSpecies[lspecidx]
-                    ng_accel_level_pops = lspec.compute_ng_accelerated_level_pops(previous_level_pops[lspec.linedata.num.get()][1:], device)
-                    relative_diff_ng_accel += torch.mean(relative_error(ng_accel_level_pops, last_ng_accelerated_pops[lspec.linedata.num.get()])).item()
-                    last_ng_accelerated_pops[lspec.linedata.num.get()] = ng_accel_level_pops
+                    ng_accel_level_pops = lspec.compute_ng_accelerated_level_pops(previous_level_pops[lspecidx][1:], device)
+                    relative_diff_ng_accel += torch.mean(relative_error(ng_accel_level_pops, last_ng_accelerated_pops[lspecidx])).item()
+                    last_ng_accelerated_pops[lspecidx] = ng_accel_level_pops
                 
                 #Use the ng-accelerated populations, if the difference between ng-accelerated iterations is smaller than the difference between the regular iterations
                 if relative_diff_ng_accel < relative_diff_default_its or len(previous_level_pops[0]) > max_its_between_ng_accel:
@@ -649,7 +649,7 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
                         if not level_pops_converged(lspec.population.get(device), last_ng_accelerated_pops[lspecidx]):
                             all_species_converged = False
                         
-                        lspec.population.set(last_ng_accelerated_pops[lspec.linedata.num.get()].to("cpu"))
+                        lspec.population.set(last_ng_accelerated_pops[lspecidx].to("cpu"))
 
                     previous_level_pops = [last_ng_accelerated_pops[lspecidx].unsqueeze(0) for lspecidx in range(model.parameters.nlspecs.get())]
 
@@ -664,6 +664,7 @@ def compute_level_populations(model: Model, device: torch.device, max_n_iteratio
             all_species_converged = True
             mean_line_intensities = solve_long_characteristics_NLTE(model, device).to(device=device)
             print("total time elapsed:", time.time()-starttime, "s")
+            memManager = MemoryManager()
 
             if use_ALI:
                 print("using ALI")
