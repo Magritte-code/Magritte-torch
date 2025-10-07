@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "magrittetorch"
-version = "0.3.1"
+version = "0.3.2"
 description = "Probabilistic 3D Reconstruction of Specrtral Line Observations."
 readme = "README.md"
 authors = [{ name = "Thomas Ceulemans", email = "thomas.ceulemans@kuleuven.be" }]
