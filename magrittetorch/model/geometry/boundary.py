@@ -182,5 +182,12 @@ class Boundary:
         Returns:
             _type_: The blackbody intensity. Has dimensions [NPOINTS, NFREQS]
         """
-        return 2.0 * constants.h.value * frequency**3 / constants.c.value**2 / torch.expm1(constants.h.value / constants.k_B.value * frequency / temperature[:, None])#type: ignore
-    
+        #this exponential term can be too large for the numerical precision
+        expm1_term = torch.expm1(constants.h.value / constants.k_B.value * frequency / temperature[:, None])
+        isinf_ids = torch.isinf(expm1_term)
+        non_isinf_ids = torch.logical_not(isinf_ids)
+        output = torch.zeros_like(frequency, dtype=Types.FrequencyInfo, device=frequency.device)
+        # Make sure you avoid any division by inf, otherwise the torch gradient will be nan, even if you reset the value using the mask
+        output[non_isinf_ids] = 2.0 * constants.h.value * frequency[non_isinf_ids]**3 / constants.c.value**2 / torch.expm1(constants.h.value / constants.k_B.value * (frequency / temperature[:, None])[non_isinf_ids])#type: ignore
+
+        return output
